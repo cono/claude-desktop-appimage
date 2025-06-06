@@ -4,7 +4,7 @@ Sorry all, I no longer use Debian, so can't maintain this further. Please feel f
 
 ## Release Workflow & Feedback
 
-This repository now uses a GitHub Actions workflow to automatically build and release `.deb` and `.AppImage` packages when a tag following the format `v<wrapper_version>+claude<claude_version>` (e.g., `v1.0.0+claude0.9.1`) is pushed.
+This repository now uses a GitHub Actions workflow to automatically build and release `.AppImage` packages when a tag following the format `v<wrapper_version>+claude<claude_version>` (e.g., `v1.0.0+claude0.9.1`) is pushed.
 
 Please check the [Releases page](https://github.com/aaddrick/claude-desktop-debian/releases) for the latest builds. Feedback on the packages and the build process is greatly appreciated! Please open an issue if you encounter any problems.
 
@@ -13,9 +13,9 @@ Please check the [Releases page](https://github.com/aaddrick/claude-desktop-debi
 
 **Arch Linux users:** For the PKGBUILD and Arch-specific instructions: [https://github.com/aaddrick/claude-desktop-arch](https://github.com/aaddrick/claude-desktop-arch)
 
-The build script now uses command-line flags to select the output format and cleanup behavior.
+The build script accepts a `--clean` flag to control cleanup of intermediate files.
 
-***THIS IS AN UNOFFICIAL BUILD SCRIPT FOR DEBIAN/UBUNTU BASED SYSTEMS (produces .deb or .AppImage)!***
+***THIS IS AN UNOFFICIAL BUILD SCRIPT FOR DEBIAN/UBUNTU BASED SYSTEMS (produces only an .AppImage)!***
 
 If you run into an issue with this build script, make an issue here. Don't bug Anthropic about it - they already have enough on their plates.
 
@@ -37,47 +37,24 @@ Supports the Tray menu! (Screenshot of running on KDE)
 
 # Building & Installation (Debian/Ubuntu based)
 
-For Debian-based distributions (Debian, Ubuntu, Linux Mint, MX Linux, etc.), you can build Claude Desktop using the provided build script. Use command-line flags to specify the desired output format (`.deb` or `.AppImage`) and whether to clean up intermediate build files.
+For Debian-based distributions (Debian, Ubuntu, Linux Mint, MX Linux, etc.), you can build Claude Desktop using the provided build script. Use the optional `--clean` flag to control cleanup of intermediate build files.
 
 ```bash
 # Clone this repository
 git clone https://github.com/aaddrick/claude-desktop-debian.git
 cd claude-desktop-debian
 
-# Build the package (Defaults to .deb and cleans build files)
+# Build the AppImage (cleans build files by default)
 ./build.sh
 
-# Example: Build an AppImage and keep intermediate files
-./build.sh --build appimage --clean no
-
-# Example: Build a .deb (explicitly) and clean intermediate files (default)
-./build.sh --build deb --clean yes
-```
+# Example: Keep intermediate files
+./build.sh --clean no
 
 The script will automatically:
  - Check for and install required dependencies
  - Download and extract resources from the Windows version
- - Create a proper Debian package or AppImage
- - Perform the build steps based on selected flags
-
-## After Building:
-
-### If you chose Debian Package (.deb):
-
-The script will output the path to the generated `.deb` file (e.g., `claude-desktop_0.9.1_amd64.deb`). Install it using `dpkg`:
-
-```bash
-# Replace VERSION and ARCHITECTURE with the actual values from the filename
-sudo dpkg -i ./claude-desktop_VERSION_ARCHITECTURE.deb 
-
-# If you encounter dependency issues, run:
-sudo apt --fix-broken install 
-```
-
-### If you chose AppImage (.AppImage):
-
-The script will output the path to the generated `.AppImage` file (e.g., `claude-desktop-0.9.1-amd64.AppImage`) and a corresponding `.desktop` file (`claude-desktop-appimage.desktop`).
-
+ - Create an AppImage
+ - Perform the build steps
 **AppImage login will not work unless you setup the .desktop file correctly or use a tool like AppImageLauncher to manage it for you.**
 
 1.  **Make the AppImage executable:**
@@ -109,19 +86,7 @@ I'd love a better suggestion. Feel free to submit a PR or start a discussion if 
 
 # Uninstallation
 
-## Debian Package (.deb)
 
-If you installed the `.deb` package, you can uninstall it using `dpkg`:
-
-```bash
-sudo dpkg -r claude-desktop
-```
-
-If you also want to remove configuration files (including MCP settings), use `purge`:
-
-```bash
-sudo dpkg -P claude-desktop
-```
 
 ## AppImage (.AppImage)
 
@@ -152,7 +117,6 @@ Claude Desktop is an Electron application packaged as a Windows executable. Our 
 2.  Unpacks the `app.asar` archive containing the application code
 3.  Replaces the Windows-specific native module with a Linux-compatible stub implementation
 4.  Repackages everything into the user's chosen format:
-    *   **Debian Package (.deb):** Creates a standard Debian package installable via `dpkg`.
     *   **AppImage (.AppImage):** Creates a self-contained executable using `appimagetool`.
 
 The process works because Claude Desktop is largely cross-platform, with only one platform-specific component that needs replacement.
@@ -162,15 +126,14 @@ The process works because Claude Desktop is largely cross-platform, with only on
 The main build script (`build.sh`) orchestrates the process:
 
 1. Checks for a Debian-based system and required dependencies
-2. Parses command-line flags (`--build`, `--clean`) to determine output format and cleanup behavior.
+2. Parses the `--clean` flag to determine cleanup behavior.
 3. Downloads the official Windows installer
 4. Extracts the application resources
 5. Processes icons for Linux desktop integration
 6. Unpacks and modifies the app.asar:
    - Replaces the native mapping module with our Linux version
    - Preserves all other functionality
-7. Calls the appropriate packaging script (`scripts/build-deb-package.sh` or `scripts/build-appimage.sh`) to create the final output:
-   *   **For .deb:** Creates a package with desktop entry, icons, dependencies, and post-install steps.
+7. Calls the packaging script (`scripts/build-appimage.sh`) to create the final AppImage.
    *   **For .AppImage:** Creates an AppDir, bundles Electron, generates an `AppRun` script and `.desktop` file, and uses `appimagetool` to create the final `.AppImage`.
 
 ## Updating the Build Script
