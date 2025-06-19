@@ -270,10 +270,13 @@ OUTPUT_FILENAME="${PACKAGE_NAME}-${VERSION}-${ARCHITECTURE}.AppImage"
 OUTPUT_PATH="$WORK_DIR/$OUTPUT_FILENAME"
 
 # Execute appimagetool
-# Export ARCH instead of using env
+# Export ARCH and set GTK environment to avoid conflicts
 export ARCH="$ARCHITECTURE"
+export GTK_THEME=""
+export GTK2_RC_FILES=""
+export GTK_PATH=""
 echo "Using ARCH=$ARCH" # Debug output
-if "$APPIMAGETOOL_PATH" "$APPDIR_PATH" "$OUTPUT_PATH"; then
+if "$APPIMAGETOOL_PATH" "$APPDIR_PATH" "$OUTPUT_PATH" 2>/dev/null; then
     echo "✓ AppImage built successfully: $OUTPUT_PATH"
 else
     echo "❌ Failed to build AppImage using $APPIMAGETOOL_PATH"
