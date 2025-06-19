@@ -7,7 +7,6 @@ ARCHITECTURE="$2"
 WORK_DIR="$3" # The top-level build directory (e.g., ./build)
 APP_STAGING_DIR="$4" # Directory containing the prepared app files (e.g., ./build/electron-app)
 PACKAGE_NAME="$5"
-# MAINTAINER and DESCRIPTION might not be directly used by AppImage tools but passed for consistency
 
 echo "--- Starting AppImage Build ---"
 echo "Version: $VERSION"

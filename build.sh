@@ -76,8 +76,6 @@ echo "Distribution: $(grep "PRETTY_NAME" /etc/os-release | cut -d'"' -f2)"
 echo "Debian version: $(cat /etc/debian_version)"
 echo "Target Architecture: $ARCHITECTURE" 
 PACKAGE_NAME="claude-desktop"
-MAINTAINER="Claude Desktop Linux Maintainers"
-DESCRIPTION="Claude Desktop for Linux"
 PROJECT_ROOT="$(pwd)" WORK_DIR="$PROJECT_ROOT/build" APP_STAGING_DIR="$WORK_DIR/electron-app" VERSION="" 
 
 echo -e "\033[1;36m--- Argument Parsing ---\033[0m"
@@ -452,8 +450,9 @@ fi
 
 
 echo -e "\033[1;36m--- Cleanup ---\033[0m"
-if [ "$PERFORM_CLEANUP" = true ]; then     echo "🧹 Cleaning up intermediate build files in $WORK_DIR..."
-        if rm -rf "$WORK_DIR"; then
+if [ "$PERFORM_CLEANUP" = true ]; then
+    echo "🧹 Cleaning up intermediate build files in $WORK_DIR..."
+    if rm -rf "$WORK_DIR"; then
         echo "✓ Cleanup complete ($WORK_DIR removed)."
     else
         echo "⚠️ Cleanup command (rm -rf $WORK_DIR) failed."
