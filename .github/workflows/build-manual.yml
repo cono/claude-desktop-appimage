@@ -1,0 +1,187 @@
+name: Manual Claude AppImage Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Create GitHub release with built AppImages'
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  detect-version:
+    name: Detect Claude Version
+    runs-on: ubuntu-latest
+    outputs:
+      claude_version: ${{ steps.extract-version.outputs.version }}
+      build_needed: ${{ steps.check-version.outputs.build_needed }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y p7zip-full
+          
+      - name: Download Claude Desktop AMD64
+        run: |
+          echo "Downloading Claude Desktop AMD64 installer..."
+          wget -O Claude-Setup-x64.exe "https://storage.googleapis.com/osprey-downloads-c02f6a0d-347c-492b-a752-3e0651722e97/nest-win-x64/Claude-Setup-x64.exe"
+          
+      - name: Extract and detect version
+        id: extract-version
+        run: |
+          echo "Extracting Claude installer..."
+          7z x -y Claude-Setup-x64.exe
+          
+          echo "Looking for nupkg file..."
+          NUPKG_FILE=$(find . -maxdepth 1 -name "AnthropicClaude-*.nupkg" | head -1)
+          
+          if [ -z "$NUPKG_FILE" ]; then
+            echo "❌ Could not find AnthropicClaude nupkg file"
+            exit 1
+          fi
+          
+          echo "Found nupkg: $NUPKG_FILE"
+          
+          # Extract version from filename
+          VERSION=$(echo "$NUPKG_FILE" | grep -oP 'AnthropicClaude-\K[0-9]+\.[0-9]+\.[0-9]+(?=-full)')
+          
+          if [ -z "$VERSION" ]; then
+            echo "❌ Could not extract version from nupkg filename: $NUPKG_FILE"
+            exit 1
+          fi
+          
+          echo "✅ Detected Claude version: $VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          
+      - name: Check if version already exists
+        id: check-version
+        run: |
+          VERSION="${{ steps.extract-version.outputs.version }}"
+          
+          # Check if a release with this version already exists
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            echo "⚠️ Release v$VERSION already exists"
+            echo "build_needed=false" >> $GITHUB_OUTPUT
+          else
+            echo "✅ New version detected, build needed"
+            echo "build_needed=true" >> $GITHUB_OUTPUT
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-amd64:
+    name: Build AMD64 AppImage
+    needs: detect-version
+    if: needs.detect-version.outputs.build_needed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Install FUSE for AppImageTool
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfuse2
+          
+      - name: Make build script executable
+        run: chmod +x ./build.sh
+        
+      - name: Run build script
+        run: |
+          echo "Running AMD64 build for version ${{ needs.detect-version.outputs.claude_version }}"
+          ./build.sh --clean yes
+          
+      - name: Upload AMD64 Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: appimage-amd64-${{ needs.detect-version.outputs.claude_version }}
+          path: claude-desktop-*.AppImage
+          if-no-files-found: error
+
+  build-arm64:
+    name: Build ARM64 AppImage
+    needs: detect-version
+    if: needs.detect-version.outputs.build_needed == 'true'
+    runs-on: ubuntu-22.04-arm
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Install FUSE for AppImageTool
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfuse2
+          
+      - name: Make build script executable
+        run: chmod +x ./build.sh
+        
+      - name: Run build script
+        run: |
+          echo "Running ARM64 build for version ${{ needs.detect-version.outputs.claude_version }}"
+          ./build.sh --clean yes
+          
+      - name: Upload ARM64 Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: appimage-arm64-${{ needs.detect-version.outputs.claude_version }}
+          path: claude-desktop-*.AppImage
+          if-no-files-found: error
+
+  release:
+    name: Create Release
+    if: |
+      always() && 
+      needs.detect-version.outputs.build_needed == 'true' && 
+      inputs.create_release == true &&
+      needs.build-amd64.result == 'success' && 
+      needs.build-arm64.result == 'success'
+    needs: [detect-version, build-amd64, build-arm64]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download AMD64 AppImage artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: appimage-amd64-${{ needs.detect-version.outputs.claude_version }}
+          path: artifacts/
+          
+      - name: Download ARM64 AppImage artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: appimage-arm64-${{ needs.detect-version.outputs.claude_version }}
+          path: artifacts/
+          
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ needs.detect-version.outputs.claude_version }}
+          name: Claude Desktop v${{ needs.detect-version.outputs.claude_version }}
+          body: |
+            # Claude Desktop AppImage v${{ needs.detect-version.outputs.claude_version }}
+            
+            Unofficial Claude Desktop AppImages for Linux, built from Claude Desktop v${{ needs.detect-version.outputs.claude_version }}.
+            
+            ## Download
+            
+            - **AMD64/x86_64**: Download `claude-desktop-${{ needs.detect-version.outputs.claude_version }}-amd64.AppImage`
+            - **ARM64**: Download `claude-desktop-${{ needs.detect-version.outputs.claude_version }}-arm64.AppImage`
+            
+            ## Installation
+            
+            1. Make the AppImage executable: `chmod +x claude-desktop-*.AppImage`
+            2. Run the AppImage: `./claude-desktop-*.AppImage`
+            3. For proper desktop integration, install [AppImageLauncher](https://github.com/TheAssassin/AppImageLauncher/releases/latest)
+            
+            ## Notes
+            
+            - This is an unofficial build - issues should be reported here, not to Anthropic
+            - AppImages include proper desktop integration and support for `claude://` protocol
+            - MCP configuration is stored in `~/.config/Claude/claude_desktop_config.json`
+          files: artifacts/**/*.AppImage
+          draft: false
+          prerelease: false

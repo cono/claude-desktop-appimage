@@ -1,21 +1,13 @@
-# Archived
-Sorry all, I no longer use Debian, so can't maintain this further. Please feel free to fork and continue developing. 
-
-
 ## Release Workflow & Feedback
 
 This repository now uses a GitHub Actions workflow to automatically build and release `.AppImage` packages when a tag following the format `v<wrapper_version>+claude<claude_version>` (e.g., `v1.0.0+claude0.9.1`) is pushed.
 
-Please check the [Releases page](https://github.com/aaddrick/claude-desktop-debian/releases) for the latest builds. Feedback on the packages and the build process is greatly appreciated! Please open an issue if you encounter any problems.
+Please check the [Releases page](https://github.com/cono/claude-desktop-appimage/releases) for the latest builds. Feedback on the packages and the build process is greatly appreciated! Please open an issue if you encounter any problems.
 
 ---
 
 
-**Arch Linux users:** For the PKGBUILD and Arch-specific instructions: [https://github.com/aaddrick/claude-desktop-arch](https://github.com/aaddrick/claude-desktop-arch)
-
-The build script accepts a `--clean` flag to control cleanup of intermediate files.
-
-***THIS IS AN UNOFFICIAL BUILD SCRIPT FOR DEBIAN/UBUNTU BASED SYSTEMS (produces only an .AppImage)!***
+***THIS IS AN UNOFFICIAL BUILD SCRIPT (produces only an .AppImage)!***
 
 If you run into an issue with this build script, make an issue here. Don't bug Anthropic about it - they already have enough on their plates.
 
@@ -35,14 +27,25 @@ Supports the Ctrl+Alt+Space popup!
 Supports the Tray menu! (Screenshot of running on KDE)
 ![image](https://github.com/user-attachments/assets/ba209824-8afb-437c-a944-b53fd9ecd559)
 
-# Building & Installation (Debian/Ubuntu based)
+# Installation
 
-For Debian-based distributions (Debian, Ubuntu, Linux Mint, MX Linux, etc.), you can build Claude Desktop using the provided build script. Use the optional `--clean` flag to control cleanup of intermediate build files.
+This project uses GitHub Actions to automatically build Claude Desktop AppImages for both AMD64 and ARM64 architectures. **No local building is required** - simply download the pre-built AppImages from the releases page.
+
+## Download Pre-built AppImages
+
+1. Go to the [Releases page](https://github.com/cono/claude-desktop-appimage/releases)
+2. Download the appropriate AppImage for your architecture:
+   - `claude-desktop-*-amd64.AppImage` for x86_64 systems
+   - `claude-desktop-*-arm64.AppImage` for ARM64 systems
+
+## Local Building (Optional)
+
+If you need to build locally for development purposes:
 
 ```bash
 # Clone this repository
-git clone https://github.com/aaddrick/claude-desktop-debian.git
-cd claude-desktop-debian
+git clone https://github.com/cono/claude-desktop-appimage.git
+cd claude-desktop-appimage
 
 # Build the AppImage (cleans build files by default)
 ./build.sh
@@ -60,7 +63,7 @@ The script will automatically:
 1.  **Make the AppImage executable:**
     ```bash
     # Replace FILENAME with the actual AppImage filename
-    chmod +x ./FILENAME.AppImage 
+    chmod +x ./FILENAME.AppImage
     ```
 2.  **Run the AppImage:**
     ```bash
@@ -107,7 +110,7 @@ rm -rf ~/.config/Claude
 
 Aside from the install logs, runtime logs can be found in (`$HOME/claude-desktop-launcher.log`).
 
-If your window isn't scaling correctly the first time or two you open the application, right click on the claude-desktop panel (taskbar) icon and quit. When doing a safe shutdown like this, the application saves some states to the .config/claude folder which will resolve the issue moving forward. Force quitting the application will not trigger the updates. 
+If your window isn't scaling correctly the first time or two you open the application, right click on the claude-desktop panel (taskbar) icon and quit. When doing a safe shutdown like this, the application saves some states to the .config/claude folder which will resolve the issue moving forward. Force quitting the application will not trigger the updates.
 
 # How it works (Debian/Ubuntu Build)
 
