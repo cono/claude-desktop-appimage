@@ -79,51 +79,37 @@ PACKAGE_NAME="claude-desktop"
 MAINTAINER="Claude Desktop Linux Maintainers"
 DESCRIPTION="Claude Desktop for Linux"
 PROJECT_ROOT="$(pwd)" WORK_DIR="$PROJECT_ROOT/build" APP_STAGING_DIR="$WORK_DIR/electron-app" VERSION="" 
+
 echo -e "\033[1;36m--- Argument Parsing ---\033[0m"
-BUILD_FORMAT="deb"    CLEANUP_ACTION="yes"  TEST_FLAGS_MODE=false
+CLEANUP_ACTION="yes"
 while [[ $# -gt 0 ]]; do
     key="$1"
     case $key in
-        -b|--build)
-        if [[ -z "$2" || "$2" == -* ]]; then              echo "❌ Error: Argument for $1 is missing" >&2; exit 1
-        fi
-        BUILD_FORMAT="$2"
-        shift 2 ;; # Shift past flag and value
         -c|--clean)
-        if [[ -z "$2" || "$2" == -* ]]; then              echo "❌ Error: Argument for $1 is missing" >&2; exit 1
-        fi
-        CLEANUP_ACTION="$2"
-        shift 2 ;; # Shift past flag and value
-        --test-flags)
-        TEST_FLAGS_MODE=true
-        shift # past argument
-        ;;
+            if [[ -z "$2" || "$2" == -* ]]; then
+                echo "❌ Error: Argument for $1 is missing" >&2
+                exit 1
+            fi
+            CLEANUP_ACTION="$2"
+            shift 2 ;;
         -h|--help)
-        echo "Usage: $0 [--build deb|appimage] [--clean yes|no] [--test-flags]"
-        echo "  --build: Specify the build format (deb or appimage). Default: deb"
-        echo "  --clean: Specify whether to clean intermediate build files (yes or no). Default: yes"
-        echo "  --test-flags: Parse flags, print results, and exit without building."
-        exit 0
-        ;;
-        *)            echo "❌ Unknown option: $1" >&2
-        echo "Use -h or --help for usage information." >&2
-        exit 1
-        ;;
+            echo "Usage: $0 [--clean yes|no]"
+            echo "  --clean: Specify whether to clean intermediate build files (yes or no). Default: yes"
+            exit 0 ;;
+        *)
+            echo "❌ Unknown option: $1" >&2
+            echo "Use -h or --help for usage information." >&2
+            exit 1 ;;
     esac
 done
 
 # Validate arguments
-BUILD_FORMAT=$(echo "$BUILD_FORMAT" | tr '[:upper:]' '[:lower:]') CLEANUP_ACTION=$(echo "$CLEANUP_ACTION" | tr '[:upper:]' '[:lower:]')
-if [[ "$BUILD_FORMAT" != "deb" && "$BUILD_FORMAT" != "appimage" ]]; then
-    echo "❌ Invalid build format specified: '$BUILD_FORMAT'. Must be 'deb' or 'appimage'." >&2
-    exit 1
-fi
+CLEANUP_ACTION=$(echo "$CLEANUP_ACTION" | tr '[:upper:]' '[:lower:]')
 if [[ "$CLEANUP_ACTION" != "yes" && "$CLEANUP_ACTION" != "no" ]]; then
     echo "❌ Invalid cleanup option specified: '$CLEANUP_ACTION'. Must be 'yes' or 'no'." >&2
     exit 1
 fi
 
-echo "Selected build format: $BUILD_FORMAT"
 echo "Cleanup intermediate files: $CLEANUP_ACTION"
 
 PERFORM_CLEANUP=false
@@ -131,18 +117,6 @@ if [ "$CLEANUP_ACTION" = "yes" ]; then
     PERFORM_CLEANUP=true
 fi
 echo -e "\033[1;36m--- End Argument Parsing ---\033[0m"
-
-# Exit early if --test-flags mode is enabled
-if [ "$TEST_FLAGS_MODE" = true ]; then
-    echo "--- Test Flags Mode Enabled ---"
-    # Target Architecture is implicitly detected now
-    echo "Build Format: $BUILD_FORMAT"
-    echo "Clean Action: $CLEANUP_ACTION"
-    echo "Exiting without build."
-    exit 0
-fi
-
-
 check_command() {
     if ! command -v "$1" &> /dev/null; then
         echo "❌ $1 not found"
@@ -156,14 +130,8 @@ check_command() {
 echo "Checking dependencies..."
 DEPS_TO_INSTALL=""
 COMMON_DEPS="p7zip wget wrestool icotool convert npx"
-DEB_DEPS="dpkg-deb"
-APPIMAGE_DEPS="" 
-ALL_DEPS_TO_CHECK="$COMMON_DEPS"
-if [ "$BUILD_FORMAT" = "deb" ]; then
-    ALL_DEPS_TO_CHECK="$ALL_DEPS_TO_CHECK $DEB_DEPS"
-elif [ "$BUILD_FORMAT" = "appimage" ]; then
-    ALL_DEPS_TO_CHECK="$ALL_DEPS_TO_CHECK $APPIMAGE_DEPS"
-fi
+APPIMAGE_DEPS=""
+ALL_DEPS_TO_CHECK="$COMMON_DEPS $APPIMAGE_DEPS"
 
 for cmd in $ALL_DEPS_TO_CHECK; do
     if ! check_command "$cmd"; then
@@ -173,7 +141,6 @@ for cmd in $ALL_DEPS_TO_CHECK; do
             "wrestool"|"icotool") DEPS_TO_INSTALL="$DEPS_TO_INSTALL icoutils" ;;
             "convert") DEPS_TO_INSTALL="$DEPS_TO_INSTALL imagemagick" ;;
             "npx") DEPS_TO_INSTALL="$DEPS_TO_INSTALL nodejs npm" ;;
-            "dpkg-deb") DEPS_TO_INSTALL="$DEPS_TO_INSTALL dpkg-dev" ;;
         esac
     fi
 done
@@ -407,27 +374,43 @@ cd "$PROJECT_ROOT"
 
 echo -e "\033[1;36m--- Call Packaging Script ---\033[0m"
 FINAL_OUTPUT_PATH="" FINAL_DESKTOP_FILE_PATH="" 
-if [ "$BUILD_FORMAT" = "deb" ]; then
-    echo "📦 Calling Debian packaging script for $ARCHITECTURE..."
-    chmod +x scripts/build-deb-package.sh
-    if ! scripts/build-deb-package.sh \
-        "$VERSION" "$ARCHITECTURE" "$WORK_DIR" "$APP_STAGING_DIR" \
-        "$PACKAGE_NAME" "$MAINTAINER" "$DESCRIPTION"; then
-        echo "❌ Debian packaging script failed."
-        exit 1
-    fi
-    DEB_FILE=$(find "$WORK_DIR" -maxdepth 1 -name "${PACKAGE_NAME}_${VERSION}_${ARCHITECTURE}.deb" | head -n 1)
-    echo "✓ Debian Build complete!"
-    if [ -n "$DEB_FILE" ] && [ -f "$DEB_FILE" ]; then
-        FINAL_OUTPUT_PATH="./$(basename "$DEB_FILE")" # Set final path using basename directly
-        mv "$DEB_FILE" "$FINAL_OUTPUT_PATH"
-        echo "Package created at: $FINAL_OUTPUT_PATH"
-    else
-        echo "Warning: Could not determine final .deb file path from $WORK_DIR for ${ARCHITECTURE}."
-        FINAL_OUTPUT_PATH="Not Found"
-    fi
+echo "📦 Calling AppImage packaging script for $ARCHITECTURE..."
+chmod +x scripts/build-appimage.sh
+if ! scripts/build-appimage.sh \
+    "$VERSION" "$ARCHITECTURE" "$WORK_DIR" "$APP_STAGING_DIR" "$PACKAGE_NAME"; then
+    echo "❌ AppImage packaging script failed."
+    exit 1
+fi
+APPIMAGE_FILE=$(find "$WORK_DIR" -maxdepth 1 -name "${PACKAGE_NAME}-${VERSION}-${ARCHITECTURE}.AppImage" | head -n 1)
+echo "✓ AppImage Build complete!"
+if [ -n "$APPIMAGE_FILE" ] && [ -f "$APPIMAGE_FILE" ]; then
+    FINAL_OUTPUT_PATH="./$(basename "$APPIMAGE_FILE")"
+    mv "$APPIMAGE_FILE" "$FINAL_OUTPUT_PATH"
+    echo "Package created at: $FINAL_OUTPUT_PATH"
 
-elif [ "$BUILD_FORMAT" = "appimage" ]; then
+    echo -e "\033[1;36m--- Generate .desktop file for AppImage ---\033[0m"
+    FINAL_DESKTOP_FILE_PATH="./${PACKAGE_NAME}-appimage.desktop"
+    echo "📝 Generating .desktop file for AppImage at $FINAL_DESKTOP_FILE_PATH..."
+    cat > "$FINAL_DESKTOP_FILE_PATH" << EOF
+[Desktop Entry]
+Name=Claude (AppImage)
+Comment=Claude Desktop (AppImage Version $VERSION)
+Exec=$(basename "$FINAL_OUTPUT_PATH") %u
+Icon=claude-desktop
+Type=Application
+Terminal=false
+Categories=Office;Utility;Network;
+MimeType=x-scheme-handler/claude;
+StartupWMClass=Claude
+X-AppImage-Version=$VERSION
+X-AppImage-Name=Claude Desktop (AppImage)
+EOF
+    echo "✓ .desktop file generated."
+
+else
+    echo "Warning: Could not determine final .AppImage file path from $WORK_DIR for ${ARCHITECTURE}."
+    FINAL_OUTPUT_PATH="Not Found"
+fi
     echo "📦 Calling AppImage packaging script for $ARCHITECTURE..."
     chmod +x scripts/build-appimage.sh
     if ! scripts/build-appimage.sh \
@@ -482,33 +465,20 @@ fi
 
 echo "✅ Build process finished."
 
+
 echo -e "\n\033[1;34m====== Next Steps ======\033[0m"
-if [ "$BUILD_FORMAT" = "deb" ]; then
-    if [ "$FINAL_OUTPUT_PATH" != "Not Found" ] && [ -e "$FINAL_OUTPUT_PATH" ]; then
-        echo -e "📦 To install the Debian package, run:"
-        echo -e "   \033[1;32msudo apt install $FINAL_OUTPUT_PATH\033[0m"
-        echo -e "   (or \`sudo dpkg -i $FINAL_OUTPUT_PATH\`)"
-    else
-        echo -e "⚠️ Debian package file not found. Cannot provide installation instructions."
-    fi
-elif [ "$BUILD_FORMAT" = "appimage" ]; then
-    if [ "$FINAL_OUTPUT_PATH" != "Not Found" ] && [ -e "$FINAL_OUTPUT_PATH" ]; then
-        echo -e "✅ AppImage created at: \033[1;36m$FINAL_OUTPUT_PATH\033[0m"
-        echo -e "\n\033[1;33mIMPORTANT:\033[0m This AppImage requires \033[1;36mAppImageLauncher\033[0m for proper desktop integration"
-        echo -e "and to handle the \`claude://\` login process correctly."
-        echo -e "\n🚀 To install AppImageLauncher (v2.2.0 for amd64):"
-        echo -e "   1. Download:"
-        echo -e "      \033[1;32mwget https://github.com/TheAssassin/AppImageLauncher/releases/download/v2.2.0/appimagelauncher_2.2.0-travis995.0f91801.bionic_amd64.deb -O /tmp/appimagelauncher.deb\033[0m"
-        echo -e "       - or appropriate package from here: \033[1;34mhttps://github.com/TheAssassin/AppImageLauncher/releases/latest\033[0m"
-        echo -e "   2. Install the package:"
-        echo -e "      \033[1;32msudo dpkg -i /tmp/appimagelauncher.deb\033[0m"
-        echo -e "   3. Fix any missing dependencies:"
-        echo -e "      \033[1;32msudo apt --fix-broken install\033[0m"
-        echo -e "\n   After installation, simply double-click \033[1;36m$FINAL_OUTPUT_PATH\033[0m and choose 'Integrate and run'."
-    else
-        echo -e "⚠️ AppImage file not found. Cannot provide usage instructions."
-    fi
+if [ "$FINAL_OUTPUT_PATH" != "Not Found" ] && [ -e "$FINAL_OUTPUT_PATH" ]; then
+    echo -e "✅ AppImage created at: \033[1;36m$FINAL_OUTPUT_PATH\033[0m"
+    echo -e "\n\033[1;33mIMPORTANT:\033[0m This AppImage requires \033[1;36mAppImageLauncher\033[0m for proper desktop integration"
+    echo -e "and to handle the \`claude://\` login process correctly."
+    echo -e "\n🚀 To install AppImageLauncher:"
+    echo -e "   1. Download the appropriate package from:"
+    echo -e "      \033[1;34mhttps://github.com/TheAssassin/AppImageLauncher/releases/latest\033[0m"
+    echo -e "   2. Install using your distribution's package manager"
+    echo -e "   3. Or use your distribution's package repository if available"
+    echo -e "\n   After installation, simply double-click \033[1;36m$FINAL_OUTPUT_PATH\033[0m and choose 'Integrate and run'."
+else
+    echo -e "⚠️ AppImage file not found. Cannot provide usage instructions."
 fi
 echo -e "\033[1;34m======================\033[0m"
-
 exit 0
