@@ -409,24 +409,25 @@ else
     echo "Warning: Could not determine final .AppImage file path from $WORK_DIR for ${ARCHITECTURE}."
     FINAL_OUTPUT_PATH="Not Found"
 fi
-    echo "📦 Calling AppImage packaging script for $ARCHITECTURE..."
-    chmod +x scripts/build-appimage.sh
-    if ! scripts/build-appimage.sh \
-        "$VERSION" "$ARCHITECTURE" "$WORK_DIR" "$APP_STAGING_DIR" "$PACKAGE_NAME"; then
-        echo "❌ AppImage packaging script failed."
-        exit 1
-    fi
-    APPIMAGE_FILE=$(find "$WORK_DIR" -maxdepth 1 -name "${PACKAGE_NAME}-${VERSION}-${ARCHITECTURE}.AppImage" | head -n 1)
-    echo "✓ AppImage Build complete!"
-    if [ -n "$APPIMAGE_FILE" ] && [ -f "$APPIMAGE_FILE" ]; then
-        FINAL_OUTPUT_PATH="./$(basename "$APPIMAGE_FILE")" 
-        mv "$APPIMAGE_FILE" "$FINAL_OUTPUT_PATH"
-        echo "Package created at: $FINAL_OUTPUT_PATH"
 
-        echo -e "\033[1;36m--- Generate .desktop file for AppImage ---\033[0m"
-        FINAL_DESKTOP_FILE_PATH="./${PACKAGE_NAME}-appimage.desktop"
-        echo "📝 Generating .desktop file for AppImage at $FINAL_DESKTOP_FILE_PATH..."
-        cat > "$FINAL_DESKTOP_FILE_PATH" << EOF
+echo "📦 Calling AppImage packaging script for $ARCHITECTURE..."
+chmod +x scripts/build-appimage.sh
+if ! scripts/build-appimage.sh \
+    "$VERSION" "$ARCHITECTURE" "$WORK_DIR" "$APP_STAGING_DIR" "$PACKAGE_NAME"; then
+    echo "❌ AppImage packaging script failed."
+    exit 1
+fi
+APPIMAGE_FILE=$(find "$WORK_DIR" -maxdepth 1 -name "${PACKAGE_NAME}-${VERSION}-${ARCHITECTURE}.AppImage" | head -n 1)
+echo "✓ AppImage Build complete!"
+if [ -n "$APPIMAGE_FILE" ] && [ -f "$APPIMAGE_FILE" ]; then
+    FINAL_OUTPUT_PATH="./$(basename "$APPIMAGE_FILE")" 
+    mv "$APPIMAGE_FILE" "$FINAL_OUTPUT_PATH"
+    echo "Package created at: $FINAL_OUTPUT_PATH"
+
+    echo -e "\033[1;36m--- Generate .desktop file for AppImage ---\033[0m"
+    FINAL_DESKTOP_FILE_PATH="./${PACKAGE_NAME}-appimage.desktop"
+    echo "📝 Generating .desktop file for AppImage at $FINAL_DESKTOP_FILE_PATH..."
+    cat > "$FINAL_DESKTOP_FILE_PATH" << EOF
 [Desktop Entry]
 Name=Claude (AppImage)
 Comment=Claude Desktop (AppImage Version $VERSION)
@@ -440,12 +441,11 @@ StartupWMClass=Claude
 X-AppImage-Version=$VERSION
 X-AppImage-Name=Claude Desktop (AppImage)
 EOF
-        echo "✓ .desktop file generated."
+    echo "✓ .desktop file generated."
 
-    else
-        echo "Warning: Could not determine final .AppImage file path from $WORK_DIR for ${ARCHITECTURE}."
-        FINAL_OUTPUT_PATH="Not Found"
-    fi
+else
+    echo "Warning: Could not determine final .AppImage file path from $WORK_DIR for ${ARCHITECTURE}."
+    FINAL_OUTPUT_PATH="Not Found"
 fi
 
 
