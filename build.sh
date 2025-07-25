@@ -171,7 +171,7 @@ check_command() {
 
 echo "Checking system dependencies (excluding Node.js - handled by NVM)..."
 DEPS_TO_INSTALL=""
-COMMON_DEPS="p7zip wget wrestool icotool convert"
+COMMON_DEPS="p7zip wget wrestool icotool convert desktop-file-validate"
 APPIMAGE_DEPS=""
 ALL_DEPS_TO_CHECK="$COMMON_DEPS $APPIMAGE_DEPS"
 
@@ -182,6 +182,7 @@ for cmd in $ALL_DEPS_TO_CHECK; do
             "wget") DEPS_TO_INSTALL="$DEPS_TO_INSTALL wget" ;;
             "wrestool"|"icotool") DEPS_TO_INSTALL="$DEPS_TO_INSTALL icoutils" ;;
             "convert") DEPS_TO_INSTALL="$DEPS_TO_INSTALL imagemagick" ;;
+            "desktop-file-validate") DEPS_TO_INSTALL="$DEPS_TO_INSTALL desktop-file-utils" ;;
         esac
     fi
 done
