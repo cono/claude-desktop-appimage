@@ -251,7 +251,7 @@ else
         *) echo "❌ Unsupported architecture for appimagetool download: $ARCHITECTURE"; exit 1 ;;
     esac
 
-    APPIMAGETOOL_URL="https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-${TOOL_ARCH}.AppImage"
+    APPIMAGETOOL_URL="https://github.com/AppImage/appimagetool/releases/download/1.9.0/appimagetool-${TOOL_ARCH}.AppImage"
     APPIMAGETOOL_PATH="$WORK_DIR/appimagetool-${TOOL_ARCH}.AppImage"
 
     if wget -q -O "$APPIMAGETOOL_PATH" "$APPIMAGETOOL_URL"; then
