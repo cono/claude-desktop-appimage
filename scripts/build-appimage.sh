@@ -7,6 +7,7 @@ ARCHITECTURE="$2"
 WORK_DIR="$3" # The top-level build directory (e.g., ./build)
 APP_STAGING_DIR="$4" # Directory containing the prepared app files (e.g., ./build/electron-app)
 PACKAGE_NAME="$5"
+DEBUG_MODE="${6:-no}" # Optional debug mode parameter
 
 echo "--- Starting AppImage Build ---"
 echo "Version: $VERSION"
@@ -14,6 +15,7 @@ echo "Architecture: $ARCHITECTURE"
 echo "Work Directory: $WORK_DIR"
 echo "App Staging Directory: $APP_STAGING_DIR"
 echo "Package Name: $PACKAGE_NAME"
+echo "Debug Mode: $DEBUG_MODE"
 
 COMPONENT_ID="io.github.cono.claude-desktop-appimage"
 # Define AppDir structure path
@@ -69,7 +71,11 @@ if [ -z "\$APPIMAGE_PATH" ]; then
     # Use readlink -f to get the absolute path, handling symlinks
     # Go up one level from AppRun's dir to get the AppImage path (usually)
     # This might be fragile if AppRun is not at the root, but it's standard.
-    APPIMAGE_PATH=\$(readlink -f "\$APPDIR/../$(basename "$APPDIR" .AppDir).AppImage" 2>/dev/null || readlink -f "\$0" 2>/dev/null)
+    if [ "$DEBUG_MODE" = "yes" ]; then
+        APPIMAGE_PATH=\$(readlink -f "\$APPDIR/../$(basename "$APPDIR" .AppDir).AppImage" || readlink -f "\$0")
+    else
+        APPIMAGE_PATH=\$(readlink -f "\$APPDIR/../$(basename "$APPDIR" .AppDir).AppImage" 2>/dev/null || readlink -f "\$0" 2>/dev/null)
+    fi
     # As a final fallback, just use $0, hoping it's the AppImage path
     if [ -z "\$APPIMAGE_PATH" ] || [ ! -f "\$APPIMAGE_PATH" ]; then
         APPIMAGE_PATH="\$0"
@@ -276,11 +282,21 @@ export GTK_THEME=""
 export GTK2_RC_FILES=""
 export GTK_PATH=""
 echo "Using ARCH=$ARCH" # Debug output
-if "$APPIMAGETOOL_PATH" "$APPDIR_PATH" "$OUTPUT_PATH" 2>/dev/null; then
-    echo "✓ AppImage built successfully: $OUTPUT_PATH"
+if [ "$DEBUG_MODE" = "yes" ]; then
+    echo "🔍 Debug mode: Running appimagetool with verbose output"
+    if "$APPIMAGETOOL_PATH" "$APPDIR_PATH" "$OUTPUT_PATH"; then
+        echo "✓ AppImage built successfully: $OUTPUT_PATH"
+    else
+        echo "❌ Failed to build AppImage using $APPIMAGETOOL_PATH"
+        exit 1
+    fi
 else
-    echo "❌ Failed to build AppImage using $APPIMAGETOOL_PATH"
-    exit 1
+    if "$APPIMAGETOOL_PATH" "$APPDIR_PATH" "$OUTPUT_PATH" 2>/dev/null; then
+        echo "✓ AppImage built successfully: $OUTPUT_PATH"
+    else
+        echo "❌ Failed to build AppImage using $APPIMAGETOOL_PATH"
+        exit 1
+    fi
 fi
 
 echo "--- AppImage Build Finished ---"

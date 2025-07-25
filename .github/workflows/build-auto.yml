@@ -16,6 +16,11 @@ on:
         required: false
         type: boolean
         default: false
+      debug:
+        description: 'Enable debug mode (remove 2>/dev/null redirections for verbose output)'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   detect-version:
@@ -107,7 +112,12 @@ jobs:
       - name: Run build script
         run: |
           echo "Running AMD64 build for version ${{ needs.detect-version.outputs.claude_version }}"
-          ./build.sh --clean yes
+          if [[ "${{ inputs.debug }}" == "true" ]]; then
+            echo "🔍 Debug mode enabled"
+            ./build.sh --clean yes --debug
+          else
+            ./build.sh --clean yes
+          fi
           
       - name: Upload AMD64 Artifact
         uses: actions/upload-artifact@v4
@@ -136,7 +146,12 @@ jobs:
       - name: Run build script
         run: |
           echo "Running ARM64 build for version ${{ needs.detect-version.outputs.claude_version }}"
-          ./build.sh --clean yes
+          if [[ "${{ inputs.debug }}" == "true" ]]; then
+            echo "🔍 Debug mode enabled"
+            ./build.sh --clean yes --debug
+          else
+            ./build.sh --clean yes
+          fi
           
       - name: Upload ARM64 Artifact
         uses: actions/upload-artifact@v4

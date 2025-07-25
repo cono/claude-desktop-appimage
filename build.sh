@@ -32,10 +32,21 @@ if [ ! -f "/etc/debian_version" ]; then
     exit 1
 fi
 
-if [ "$EUID" -eq 0 ]; then
+# Check for root user early, but allow override with --allow-root parameter
+# We need to do a simple check here before full argument parsing
+ALLOW_ROOT_OVERRIDE=false
+for arg in "$@"; do
+    if [ "$arg" = "--allow-root" ]; then
+        ALLOW_ROOT_OVERRIDE=true
+        break
+    fi
+done
+
+if [ "$EUID" -eq 0 ] && [ "$ALLOW_ROOT_OVERRIDE" = false ]; then
    echo "❌ This script should not be run using sudo or as the root user."
    echo "   It will prompt for sudo password when needed for specific actions."
    echo "   Please run as a normal user."
+   echo "   Use --allow-root to override this check for testing purposes."
    exit 1
 fi
 
@@ -47,28 +58,49 @@ if [ -z "$ORIGINAL_HOME" ]; then
 fi
 echo "Running as user: $ORIGINAL_USER (Home: $ORIGINAL_HOME)"
 
-# Check for NVM and source it if found to ensure npm/npx are available later
-if [ -d "$ORIGINAL_HOME/.nvm" ]; then
-    echo "Found NVM installation for user $ORIGINAL_USER, attempting to activate..."
-    export NVM_DIR="$ORIGINAL_HOME/.nvm"
-    if [ -s "$NVM_DIR/nvm.sh" ]; then
-        # Source NVM script to set up NVM environment variables temporarily
-        # shellcheck disable=SC1091
-        \. "$NVM_DIR/nvm.sh" # This loads nvm
-        # Initialize and find the path to the currently active or default Node version's bin directory
-        NODE_BIN_PATH=""
-        NODE_BIN_PATH=$(nvm which current | xargs dirname 2>/dev/null || find "$NVM_DIR/versions/node" -maxdepth 2 -type d -name 'bin' | sort -V | tail -n 1)
+# Install and configure NVM with Node.js LTS to avoid old Node.js issues
+echo -e "\033[1;36m--- NVM and Node.js Setup ---\033[0m"
+export NVM_DIR="$ORIGINAL_HOME/.nvm"
 
-        if [ -n "$NODE_BIN_PATH" ] && [ -d "$NODE_BIN_PATH" ]; then
-            echo "Adding NVM Node bin path to PATH: $NODE_BIN_PATH"
-            export PATH="$NODE_BIN_PATH:$PATH"
-        else
-            echo "Warning: Could not determine NVM Node bin path. npm/npx might not be found."
-        fi
+if [ -d "$NVM_DIR" ]; then
+    echo "Found existing NVM installation for user $ORIGINAL_USER"
+else
+    echo "NVM not found, installing NVM..."
+    if wget -qO- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash; then
+        echo "✓ NVM installation completed"
     else
-        echo "Warning: nvm.sh script not found or not sourceable."
+        echo "❌ Failed to install NVM"
+        exit 1
     fi
-fi # End of if [ -d "$ORIGINAL_HOME/.nvm" ] check
+fi
+
+# Source NVM script to activate it
+if [ -s "$NVM_DIR/nvm.sh" ]; then
+    echo "Activating NVM..."
+    # Temporarily disable unbound variable checking for NVM operations
+    set +u
+    # shellcheck disable=SC1091
+    . "$NVM_DIR/nvm.sh" # This loads nvm
+    
+    # Install and use Node.js LTS
+    echo "Installing Node.js LTS via NVM..."
+    if nvm install --lts; then
+        echo "✓ Node.js LTS installed successfully"
+        nvm use --lts
+        echo "Using Node.js version: $(node --version)"
+        echo "Using npm version: $(npm --version)"
+    else
+        echo "❌ Failed to install Node.js LTS via NVM"
+        set -u  # Re-enable unbound variable checking
+        exit 1
+    fi
+    # Re-enable unbound variable checking
+    set -u
+else
+    echo "❌ NVM script not found after installation"
+    exit 1
+fi
+echo -e "\033[1;36m--- End NVM and Node.js Setup ---\033[0m"
 
 
 echo "System Information:"
@@ -80,6 +112,8 @@ PROJECT_ROOT="$(pwd)" WORK_DIR="$PROJECT_ROOT/build" APP_STAGING_DIR="$WORK_DIR/
 
 echo -e "\033[1;36m--- Argument Parsing ---\033[0m"
 CLEANUP_ACTION="yes"
+DEBUG_MODE="no"
+ALLOW_ROOT="no"
 while [[ $# -gt 0 ]]; do
     key="$1"
     case $key in
@@ -90,9 +124,17 @@ while [[ $# -gt 0 ]]; do
             fi
             CLEANUP_ACTION="$2"
             shift 2 ;;
+        -d|--debug)
+            DEBUG_MODE="yes"
+            shift ;;
+        --allow-root)
+            ALLOW_ROOT="yes"
+            shift ;;
         -h|--help)
-            echo "Usage: $0 [--clean yes|no]"
+            echo "Usage: $0 [--clean yes|no] [--debug] [--allow-root]"
             echo "  --clean: Specify whether to clean intermediate build files (yes or no). Default: yes"
+            echo "  --debug: Enable debug mode with verbose output. Default: no"
+            echo "  --allow-root: Allow running as root user (for testing only). Default: no"
             exit 0 ;;
         *)
             echo "❌ Unknown option: $1" >&2
@@ -109,6 +151,8 @@ if [[ "$CLEANUP_ACTION" != "yes" && "$CLEANUP_ACTION" != "no" ]]; then
 fi
 
 echo "Cleanup intermediate files: $CLEANUP_ACTION"
+echo "Debug mode: $DEBUG_MODE"
+echo "Allow root: $ALLOW_ROOT"
 
 PERFORM_CLEANUP=false
 if [ "$CLEANUP_ACTION" = "yes" ]; then
@@ -125,9 +169,9 @@ check_command() {
     fi
 }
 
-echo "Checking dependencies..."
+echo "Checking system dependencies (excluding Node.js - handled by NVM)..."
 DEPS_TO_INSTALL=""
-COMMON_DEPS="p7zip wget wrestool icotool convert npx"
+COMMON_DEPS="p7zip wget wrestool icotool convert"
 APPIMAGE_DEPS=""
 ALL_DEPS_TO_CHECK="$COMMON_DEPS $APPIMAGE_DEPS"
 
@@ -138,10 +182,17 @@ for cmd in $ALL_DEPS_TO_CHECK; do
             "wget") DEPS_TO_INSTALL="$DEPS_TO_INSTALL wget" ;;
             "wrestool"|"icotool") DEPS_TO_INSTALL="$DEPS_TO_INSTALL icoutils" ;;
             "convert") DEPS_TO_INSTALL="$DEPS_TO_INSTALL imagemagick" ;;
-            "npx") DEPS_TO_INSTALL="$DEPS_TO_INSTALL nodejs npm" ;;
         esac
     fi
 done
+
+# Check for npx separately since it's now provided by NVM
+if ! check_command "npx"; then
+    echo "❌ npx not found. Node.js/npm installation via NVM may have failed."
+    exit 1
+else
+    echo "✓ npx found (provided by NVM Node.js installation)"
+fi
 
 if [ -n "$DEPS_TO_INSTALL" ]; then
     echo "System dependencies needed: $DEPS_TO_INSTALL"
@@ -375,7 +426,7 @@ FINAL_OUTPUT_PATH="" FINAL_DESKTOP_FILE_PATH=""
 echo "📦 Calling AppImage packaging script for $ARCHITECTURE..."
 chmod +x scripts/build-appimage.sh
 if ! scripts/build-appimage.sh \
-    "$VERSION" "$ARCHITECTURE" "$WORK_DIR" "$APP_STAGING_DIR" "$PACKAGE_NAME"; then
+    "$VERSION" "$ARCHITECTURE" "$WORK_DIR" "$APP_STAGING_DIR" "$PACKAGE_NAME" "$DEBUG_MODE"; then
     echo "❌ AppImage packaging script failed."
     exit 1
 fi
@@ -413,7 +464,7 @@ fi
 echo "📦 Calling AppImage packaging script for $ARCHITECTURE..."
 chmod +x scripts/build-appimage.sh
 if ! scripts/build-appimage.sh \
-    "$VERSION" "$ARCHITECTURE" "$WORK_DIR" "$APP_STAGING_DIR" "$PACKAGE_NAME"; then
+    "$VERSION" "$ARCHITECTURE" "$WORK_DIR" "$APP_STAGING_DIR" "$PACKAGE_NAME" "$DEBUG_MODE"; then
     echo "❌ AppImage packaging script failed."
     exit 1
 fi
