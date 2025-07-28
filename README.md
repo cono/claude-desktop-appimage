@@ -1,6 +1,4 @@
-## Release Workflow & Feedback
-
-This repository now uses a GitHub Actions workflow to automatically build and release `.AppImage` packages when a tag following the format `v<wrapper_version>+claude<claude_version>` (e.g., `v1.0.0+claude0.9.1`) is pushed.
+## Feedback
 
 Please check the [Releases page](https://github.com/cono/claude-desktop-appimage/releases) for the latest builds. Feedback on the packages and the build process is greatly appreciated! Please open an issue if you encounter any problems.
 
@@ -37,6 +35,28 @@ This project uses GitHub Actions to automatically build Claude Desktop AppImages
 2. Download the appropriate AppImage for your architecture:
    - `claude-desktop-*-amd64.AppImage` for x86_64 systems
    - `claude-desktop-*-arm64.AppImage` for ARM64 systems
+
+## Automatic Updates
+
+For easier updates, you can use the included `update.sh` script:
+
+```bash
+# Download the update script
+wget https://raw.githubusercontent.com/cono/claude-desktop-appimage/main/update.sh
+chmod +x update.sh
+
+# Run the update script (requires GitHub CLI)
+./update.sh
+```
+
+The script will:
+- Check for the latest release
+- Download the amd64 AppImage automatically  
+- Compare file hashes to avoid unnecessary downloads
+- Back up your current binary as `claude-desktop-old`
+- Make the new binary executable
+
+**Requirements:** The script requires the GitHub CLI (`gh`) to be installed.
 
 ## Local Building (Optional)
 
