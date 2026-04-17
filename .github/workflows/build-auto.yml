@@ -33,41 +33,34 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y p7zip-full
-          
-      - name: Download Claude Desktop AMD64
-        run: |
-          echo "Downloading Claude Desktop AMD64 installer..."
-          wget -O Claude-Setup-x64.exe "https://storage.googleapis.com/osprey-downloads-c02f6a0d-347c-492b-a752-3e0651722e97/nest-win-x64/Claude-Setup-x64.exe"
-          
-      - name: Extract and detect version
+      - name: Detect version from RELEASES file
         id: extract-version
         run: |
-          echo "Extracting Claude installer..."
-          7z x -y Claude-Setup-x64.exe
-          
-          echo "Looking for nupkg file..."
-          NUPKG_FILE=$(find . -maxdepth 1 -name "AnthropicClaude-*.nupkg" | head -1)
-          
-          if [ -z "$NUPKG_FILE" ]; then
-            echo "❌ Could not find AnthropicClaude nupkg file"
+          echo "Fetching RELEASES file from downloads.claude.ai..."
+          RELEASES_URL="https://downloads.claude.ai/releases/win32/x64/RELEASES"
+          RELEASES_CONTENT=$(wget -qO- "$RELEASES_URL")
+
+          if [ -z "$RELEASES_CONTENT" ]; then
+            echo "❌ Failed to fetch RELEASES file from $RELEASES_URL"
             exit 1
           fi
-          
-          echo "Found nupkg: $NUPKG_FILE"
-          
-          # Extract version from filename
-          VERSION=$(echo "$NUPKG_FILE" | grep -oP 'AnthropicClaude-\K[0-9]+\.[0-9]+\.[0-9]+(?=-full)')
-          
+
+          # Get the latest full nupkg entry (last -full.nupkg line)
+          LATEST_ENTRY=$(echo "$RELEASES_CONTENT" | grep -- "-full.nupkg" | tail -1)
+          if [ -z "$LATEST_ENTRY" ]; then
+            echo "❌ Could not find a -full.nupkg entry in RELEASES file"
+            exit 1
+          fi
+
+          NUPKG_FILENAME=$(echo "$LATEST_ENTRY" | awk '{print $2}')
+          VERSION=$(echo "$NUPKG_FILENAME" | grep -oP 'AnthropicClaude-\K[0-9]+\.[0-9]+\.[0-9]+(?=-full)')
+
           if [ -z "$VERSION" ]; then
-            echo "❌ Could not extract version from nupkg filename: $NUPKG_FILE"
+            echo "❌ Could not extract version from nupkg filename: $NUPKG_FILENAME"
             exit 1
           fi
-          
-          echo "✅ Detected Claude version: $VERSION"
+
+          echo "✅ Detected Claude version: $VERSION (from $NUPKG_FILENAME)"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           
       - name: Check if version already exists

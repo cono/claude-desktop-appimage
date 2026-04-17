@@ -9,21 +9,20 @@ echo "Detected host architecture: $HOST_ARCH"
 cat /etc/os-release && uname -m && dpkg --print-architecture
 
 # Set variables based on detected architecture
+CLAUDE_DOWNLOADS_BASE="https://downloads.claude.ai/releases/win32"
 if [ "$HOST_ARCH" = "amd64" ]; then
-    CLAUDE_DOWNLOAD_URL="https://storage.googleapis.com/osprey-downloads-c02f6a0d-347c-492b-a752-3e0651722e97/nest-win-x64/Claude-Setup-x64.exe"
+    CLAUDE_ARCH="x64"
     ARCHITECTURE="amd64"
-    CLAUDE_EXE_FILENAME="Claude-Setup-x64.exe"
     echo "Configured for amd64 build."
 elif [ "$HOST_ARCH" = "arm64" ]; then
-    CLAUDE_DOWNLOAD_URL="https://storage.googleapis.com/osprey-downloads-c02f6a0d-347c-492b-a752-3e0651722e97/nest-win-arm64/Claude-Setup-arm64.exe"
+    CLAUDE_ARCH="arm64"
     ARCHITECTURE="arm64"
-    CLAUDE_EXE_FILENAME="Claude-Setup-arm64.exe"
     echo "Configured for arm64 build."
 else
     echo "❌ Unsupported architecture: $HOST_ARCH. This script currently supports amd64 and arm64."
     exit 1
 fi
-echo "Target Architecture (detected): $ARCHITECTURE" # Renamed echo
+echo "Target Architecture (detected): $ARCHITECTURE"
 echo -e "\033[1;36m--- End Architecture Detection ---\033[0m"
 
 
@@ -281,38 +280,55 @@ echo "Using Electron module path: $CHOSEN_ELECTRON_MODULE_PATH"
 echo "Using asar executable: $ASAR_EXEC"
 
 
-echo -e "\033[1;36m--- Download the latest Claude executable ---\033[0m"
-echo "📥 Downloading Claude Desktop installer for $ARCHITECTURE..."
-CLAUDE_EXE_PATH="$WORK_DIR/$CLAUDE_EXE_FILENAME"
-if ! wget -O "$CLAUDE_EXE_PATH" "$CLAUDE_DOWNLOAD_URL"; then
-    echo "❌ Failed to download Claude Desktop installer from $CLAUDE_DOWNLOAD_URL"
+echo -e "\033[1;36m--- Download Claude Desktop nupkg ---\033[0m"
+echo "📥 Fetching latest version info for $ARCHITECTURE..."
+RELEASES_URL="$CLAUDE_DOWNLOADS_BASE/$CLAUDE_ARCH/RELEASES"
+RELEASES_CONTENT=$(wget -qO- "$RELEASES_URL")
+if [ -z "$RELEASES_CONTENT" ]; then
+    echo "❌ Failed to fetch RELEASES file from $RELEASES_URL"
     exit 1
 fi
-echo "✓ Download complete: $CLAUDE_EXE_FILENAME"
 
-echo "📦 Extracting resources from $CLAUDE_EXE_FILENAME into separate directory..."
+# Get the latest full nupkg entry (last -full.nupkg line)
+LATEST_ENTRY=$(echo "$RELEASES_CONTENT" | grep -- "-full.nupkg" | tail -1)
+if [ -z "$LATEST_ENTRY" ]; then
+    echo "❌ Could not find a -full.nupkg entry in RELEASES file"
+    exit 1
+fi
+
+NUPKG_SHA1=$(echo "$LATEST_ENTRY" | awk '{print $1}')
+NUPKG_FILENAME=$(echo "$LATEST_ENTRY" | awk '{print $2}')
+VERSION=$(echo "$NUPKG_FILENAME" | LC_ALL=C grep -oP 'AnthropicClaude-\K[0-9]+\.[0-9]+\.[0-9]+(?=-full)')
+if [ -z "$VERSION" ]; then
+    echo "❌ Could not extract version from nupkg filename: $NUPKG_FILENAME"
+    exit 1
+fi
+echo "✓ Detected Claude version: $VERSION (nupkg: $NUPKG_FILENAME)"
+
 CLAUDE_EXTRACT_DIR="$WORK_DIR/claude-extract"
 mkdir -p "$CLAUDE_EXTRACT_DIR"
-if ! 7z x -y "$CLAUDE_EXE_PATH" -o"$CLAUDE_EXTRACT_DIR"; then     echo "❌ Failed to extract installer"
-    cd "$PROJECT_ROOT" && exit 1
+
+echo "📥 Downloading $NUPKG_FILENAME..."
+NUPKG_DOWNLOAD_URL="$CLAUDE_DOWNLOADS_BASE/$CLAUDE_ARCH/$NUPKG_FILENAME"
+NUPKG_PATH="$CLAUDE_EXTRACT_DIR/$NUPKG_FILENAME"
+if ! wget -O "$NUPKG_PATH" "$NUPKG_DOWNLOAD_URL"; then
+    echo "❌ Failed to download nupkg from $NUPKG_DOWNLOAD_URL"
+    exit 1
 fi
 
-cd "$CLAUDE_EXTRACT_DIR" # Change into the extract dir to find files
-NUPKG_PATH_RELATIVE=$(find . -maxdepth 1 -name "AnthropicClaude-*.nupkg" | head -1)
-if [ -z "$NUPKG_PATH_RELATIVE" ]; then
-    echo "❌ Could not find AnthropicClaude nupkg file in $CLAUDE_EXTRACT_DIR"
-    cd "$PROJECT_ROOT" && exit 1
+# Verify SHA1 integrity
+echo "Verifying SHA1 checksum..."
+ACTUAL_SHA1=$(sha1sum "$NUPKG_PATH" | awk '{print toupper($1)}')
+if [ "$ACTUAL_SHA1" != "$NUPKG_SHA1" ]; then
+    echo "❌ SHA1 mismatch! Expected: $NUPKG_SHA1, Got: $ACTUAL_SHA1"
+    exit 1
 fi
-NUPKG_PATH="$CLAUDE_EXTRACT_DIR/$NUPKG_PATH_RELATIVE" echo "Found nupkg: $NUPKG_PATH_RELATIVE (in $CLAUDE_EXTRACT_DIR)"
+echo "✓ SHA1 checksum verified"
 
-VERSION=$(echo "$NUPKG_PATH_RELATIVE" | LC_ALL=C grep -oP 'AnthropicClaude-\K[0-9]+\.[0-9]+\.[0-9]+(?=-full|-arm64-full)')
-if [ -z "$VERSION" ]; then
-    echo "❌ Could not extract version from nupkg filename: $NUPKG_PATH_RELATIVE"
-    cd "$PROJECT_ROOT" && exit 1
-fi
-echo "✓ Detected Claude version: $VERSION"
-
-if ! 7z x -y "$NUPKG_PATH_RELATIVE"; then     echo "❌ Failed to extract nupkg"
+echo "📦 Extracting nupkg..."
+cd "$CLAUDE_EXTRACT_DIR"
+if ! 7z x -y "$NUPKG_FILENAME"; then
+    echo "❌ Failed to extract nupkg"
     cd "$PROJECT_ROOT" && exit 1
 fi
 echo "✓ Resources extracted from nupkg"

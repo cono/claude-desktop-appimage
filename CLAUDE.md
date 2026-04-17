@@ -33,7 +33,7 @@ The repository uses GitHub Actions for automatic building and releasing:
 - **`codespell.yml`** - Spelling check for documentation on push/PR
 
 ### Release Process
-1. **Version Detection** (`.github/workflows/build-auto.yml:21-89`) - Downloads AMD64 installer, extracts nupkg, parses version from filename
+1. **Version Detection** (`.github/workflows/build-auto.yml:21-89`) - Fetches RELEASES file from downloads.claude.ai, parses latest version
 2. **Parallel Building** - AMD64 builds on `ubuntu-latest`, ARM64 builds on `ubuntu-22.04-arm`
 3. **Automated Release** - Creates GitHub release with both architecture AppImages when builds succeed
 
@@ -41,10 +41,10 @@ The repository uses GitHub Actions for automatic building and releasing:
 
 The build process follows these steps:
 
-1. **Architecture Detection** (`build.sh:4-27`) - Detects amd64/arm64 and sets appropriate download URLs
+1. **Architecture Detection** (`build.sh:4-27`) - Detects amd64/arm64 and sets appropriate download parameters
 2. **Dependency Installation** (`build.sh:122-158`) - Installs required tools (p7zip, wget, icoutils, imagemagick, nodejs/npm)
 3. **Electron/Asar Setup** (`build.sh:163-224`) - Installs local Electron and asar tools in `build/` directory
-4. **Resource Extraction** (`build.sh:226-276`) - Downloads Windows installer, extracts nupkg, processes icons
+4. **Resource Extraction** (`build.sh:226-276`) - Fetches RELEASES file from downloads.claude.ai, downloads nupkg directly, processes icons
 5. **App Modification** (`build.sh:278-363`) - Unpacks app.asar, replaces native module, applies title bar fix
 6. **AppImage Packaging** (`scripts/build-appimage.sh`) - Creates AppDir structure and builds final AppImage
 
