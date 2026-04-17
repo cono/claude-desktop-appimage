@@ -413,6 +413,30 @@ else
 fi
 echo "##############################################################"
 
+echo "##############################################################"
+echo "Fixing tray icon for Linux: use TrayIconTemplate-Dark.png"
+echo "instead of TrayIconTemplate.png (macOS template image is black"
+echo "on transparent, invisible on dark Linux system trays)"
+
+MAIN_JS="app.asar.contents/.vite/build/index.js"
+if [ -f "$MAIN_JS" ]; then
+  # The minified code has: :"Tray-Win32.ico":VAR="TrayIconTemplate.png"
+  # Replace with the Dark variant since this is a Linux-only build
+  if grep -q '"TrayIconTemplate\.png"' "$MAIN_JS"; then
+    sed -i 's/"TrayIconTemplate\.png"/"TrayIconTemplate-Dark.png"/g' "$MAIN_JS"
+    if ! grep -q '"TrayIconTemplate\.png"' "$MAIN_JS"; then
+      echo "Successfully replaced TrayIconTemplate.png with TrayIconTemplate-Dark.png"
+    else
+      echo "Warning: TrayIconTemplate.png replacement may have failed" >&2
+    fi
+  else
+    echo "Warning: Could not find TrayIconTemplate.png reference in $MAIN_JS" >&2
+  fi
+else
+  echo "Warning: Main process JS not found at $MAIN_JS" >&2
+fi
+echo "##############################################################"
+
 "$ASAR_EXEC" pack app.asar.contents app.asar
 
 mkdir -p "$APP_STAGING_DIR/app.asar.unpacked/node_modules/claude-native"
