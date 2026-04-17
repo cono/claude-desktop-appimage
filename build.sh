@@ -356,6 +356,7 @@ cd "$APP_STAGING_DIR"
 "$ASAR_EXEC" extract app.asar app.asar.contents
 
 echo "Creating stub native module..."
+mkdir -p app.asar.contents/node_modules/claude-native
 cat > app.asar.contents/node_modules/claude-native/index.js << 'MODULE_EOF'
 // Stub implementation of claude-native using KeyboardKey enum values
 const KeyboardKey = { Backspace: 43, Tab: 280, Enter: 261, Shift: 272, Control: 61, Alt: 40, CapsLock: 56, Escape: 85, Space: 276, PageUp: 251, PageDown: 250, End: 83, Home: 154, LeftArrow: 175, UpArrow: 282, RightArrow: 262, DownArrow: 81, Delete: 79, Meta: 187 };
