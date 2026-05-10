@@ -242,12 +242,48 @@ fi
 
 if [ "$INSTALL_NEEDED" = true ]; then
     echo "Installing Electron and Asar locally into $WORK_DIR..."
-        if ! npm install --no-save electron @electron/asar; then
+    if ! npm install --no-save electron @electron/asar; then
         echo "❌ Failed to install Electron and/or Asar locally."
         cd "$PROJECT_ROOT"
         exit 1
     fi
     echo "✓ Electron and Asar installation command finished."
+
+    # npm v11 / Node v24 silently skips the Electron binary download in some CI environments.
+    # If the dist directory is still missing, download the binary directly from GitHub releases
+    # using the version recorded in the installed package.json.
+    if [ ! -d "$ELECTRON_DIST_PATH" ]; then
+        echo "⚠️ Electron binary not downloaded by npm postinstall. Falling back to direct download..."
+        ELECTRON_PKG_VERSION=$(node -pe "require('./node_modules/electron/package.json').version" 2>/dev/null || echo "")
+        if [ -z "$ELECTRON_PKG_VERSION" ]; then
+            echo "❌ Could not determine Electron version from installed package.json."
+            cd "$PROJECT_ROOT"
+            exit 1
+        fi
+        echo "Electron package version: $ELECTRON_PKG_VERSION"
+        if [ "$ARCHITECTURE" = "amd64" ]; then
+            ELECTRON_LINUX_ARCH="x64"
+        else
+            ELECTRON_LINUX_ARCH="arm64"
+        fi
+        ELECTRON_ZIP="electron-v${ELECTRON_PKG_VERSION}-linux-${ELECTRON_LINUX_ARCH}.zip"
+        ELECTRON_RELEASE_URL="https://github.com/electron/electron/releases/download/v${ELECTRON_PKG_VERSION}/${ELECTRON_ZIP}"
+        echo "Downloading Electron from: $ELECTRON_RELEASE_URL"
+        if ! wget -O "$ELECTRON_ZIP" "$ELECTRON_RELEASE_URL"; then
+            echo "❌ Failed to download Electron binary from GitHub releases."
+            cd "$PROJECT_ROOT"
+            exit 1
+        fi
+        mkdir -p "$ELECTRON_DIST_PATH"
+        if ! 7z x -y "$ELECTRON_ZIP" -o"$ELECTRON_DIST_PATH"; then
+            echo "❌ Failed to extract Electron binary."
+            cd "$PROJECT_ROOT"
+            exit 1
+        fi
+        rm -f "$ELECTRON_ZIP"
+        chmod +x "$ELECTRON_DIST_PATH/electron"
+        echo "✓ Electron binary downloaded and extracted successfully."
+    fi
 else
     echo "✓ Local Electron distribution and Asar binary already present."
 fi
@@ -259,7 +295,8 @@ if [ -d "$ELECTRON_DIST_PATH" ]; then
 else
     echo "❌ Failed to find Electron distribution directory at '$ELECTRON_DIST_PATH' after installation attempt."
     echo "   Cannot proceed without the Electron distribution files."
-    cd "$PROJECT_ROOT"     exit 1
+    cd "$PROJECT_ROOT"
+    exit 1
 fi
 
 if [ -f "$ASAR_BIN_PATH" ]; then
