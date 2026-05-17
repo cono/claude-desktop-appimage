@@ -333,7 +333,7 @@ if [ -z "$LATEST_ENTRY" ]; then
     exit 1
 fi
 
-NUPKG_SHA1=$(echo "$LATEST_ENTRY" | awk '{print $1}')
+NUPKG_SHA1=$(echo "$LATEST_ENTRY" | awk '{print $1}' | tr -d '\r\n' | sed 's/^\xEF\xBB\xBF//')
 NUPKG_FILENAME=$(echo "$LATEST_ENTRY" | awk '{print $2}')
 VERSION=$(echo "$NUPKG_FILENAME" | LC_ALL=C grep -oP 'AnthropicClaude-\K[0-9]+\.[0-9]+\.[0-9]+(?=-full)')
 if [ -z "$VERSION" ]; then
