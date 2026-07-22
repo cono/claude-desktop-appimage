@@ -451,26 +451,58 @@ fi
 echo "##############################################################"
 
 echo "##############################################################"
-echo "Fixing tray icon for Linux: use TrayIconTemplate-Dark.png"
-echo "instead of TrayIconTemplate.png (macOS template image is black"
-echo "on transparent, invisible on dark Linux system trays)"
+echo "Fixing tray icon for Linux: Electron's nativeImage cannot decode"
+echo "the Windows .ico tray images (they load as an empty 0x0 image), so"
+echo "the tray registers with no icon and the system tray shows a"
+echo "placeholder. On Linux the selector falls through to the Windows"
+echo '"ico" case (r2t stays "ico"), so redirect Tray-Win32*.ico to the'
+echo "bundled Linux PNGs (TrayIconLinux*.png), which decode fine."
 
-MAIN_JS="app.asar.contents/.vite/build/index.js"
-if [ -f "$MAIN_JS" ]; then
-  # The minified code has: :"Tray-Win32.ico":VAR="TrayIconTemplate.png"
-  # Replace with the Dark variant since this is a Linux-only build
-  if grep -q '"TrayIconTemplate\.png"' "$MAIN_JS"; then
-    sed -i 's/"TrayIconTemplate\.png"/"TrayIconTemplate-Dark.png"/g' "$MAIN_JS"
-    if ! grep -q '"TrayIconTemplate\.png"' "$MAIN_JS"; then
-      echo "Successfully replaced TrayIconTemplate.png with TrayIconTemplate-Dark.png"
-    else
-      echo "Warning: TrayIconTemplate.png replacement may have failed" >&2
-    fi
+# The tray-icon selector lives in a hashed chunk under .vite/build/
+# (e.g. index.chunk-*.js), NOT index.js. Locate it by content: the
+# literal icon filenames are not minified, only the chunk name is.
+TRAY_JS=$(grep -rl '"Tray-Win32\.ico"' app.asar.contents/.vite/build/ 2>/dev/null)
+if [ -n "$TRAY_JS" ]; then
+  echo "Found tray icon reference in: $TRAY_JS"
+  # Dark variant first so it isn't partially matched by the non-dark rule.
+  sed -i 's/"Tray-Win32-Dark\.ico"/"TrayIconLinux-Dark.png"/g; s/"Tray-Win32\.ico"/"TrayIconLinux.png"/g' $TRAY_JS
+  if ! grep -q '"Tray-Win32\.ico"' $TRAY_JS; then
+    echo "Successfully redirected Windows ICO tray icons to Linux PNGs"
   else
-    echo "Warning: Could not find TrayIconTemplate.png reference in $MAIN_JS" >&2
+    echo "Warning: tray icon redirect may have failed" >&2
+  fi
+
+  # --- Tray behaviour fixes (same chunk as the tray icon) ---
+  # 1) Left-click restores the MAIN window. Upstream wires the tray click to
+  #    sAt(), which opens the Quick Entry popup and only falls back to the main
+  #    window if the popup fails to show -> on Linux clicking the tray never
+  #    brings the window back. Rewire ONLY the tray click handler to show the
+  #    main window inline. We anchor on the tray-only ',<var>.on("right-click"'
+  #    that follows it so sAt() itself is left intact (it is shared with the
+  #    Ctrl+Alt+Space Quick Entry shortcut, which must keep working).
+  if grep -qE '\.on\("click",\(\)=>void [A-Za-z0-9_$]+\(\)\),[A-Za-z0-9_$]+\.on\("right-click"' $TRAY_JS; then
+    sed -i -E 's/\.on\("click",\(\)=>void [A-Za-z0-9_$]+\(\)\)(,[A-Za-z0-9_$]+\.on\("right-click")/.on("click",()=>void(exports.mainWindow\&\&!exports.mainWindow.isDestroyed()\&\&(exports.mainWindow.show(),exports.mainWindow.focus())))\1/' $TRAY_JS
+    echo "Rewired tray left-click to restore the main window"
+  else
+    echo "Warning: tray click handler pattern not found; left-click fix skipped" >&2
+  fi
+
+  # 2) Populate the tray context menu. Upstream gates the native context menu
+  #    behind a Statsig feature flag (gate id 1109029378); when the gate is on
+  #    it calls Tray.setContextMenu(null) and relies on a manual popUpContextMenu
+  #    on right-click, which does not work with StatusNotifierItem hosts on
+  #    Wayland -> the tray menu is empty. Force that gate's accessor to return
+  #    false so the real menu (Open/Quit/...) is installed via setContextMenu.
+  #    The gate id string is stable across builds; only the accessor name is
+  #    minified, so match 'return <ident>("1109029378")'.
+  if grep -qE 'return [A-Za-z0-9_$]+\("1109029378"\)' $TRAY_JS; then
+    sed -i -E 's/return [A-Za-z0-9_$]+\("1109029378"\)/return !1/' $TRAY_JS
+    echo "Forced tray context-menu feature gate off (native menu enabled)"
+  else
+    echo "Warning: tray context-menu gate pattern not found; menu fix skipped" >&2
   fi
 else
-  echo "Warning: Main process JS not found at $MAIN_JS" >&2
+  echo "Warning: Could not find Tray-Win32.ico reference under .vite/build/" >&2
 fi
 echo "##############################################################"
 
@@ -531,7 +563,7 @@ Type=Application
 Terminal=false
 Categories=Office;Utility;Network;
 MimeType=x-scheme-handler/claude;
-StartupWMClass=Claude
+StartupWMClass=com.anthropic.Claude
 X-AppImage-Version=$VERSION
 X-AppImage-Name=Claude Desktop (AppImage)
 EOF
@@ -569,7 +601,7 @@ Type=Application
 Terminal=false
 Categories=Office;Utility;Network;
 MimeType=x-scheme-handler/claude;
-StartupWMClass=Claude
+StartupWMClass=com.anthropic.Claude
 X-AppImage-Version=$VERSION
 X-AppImage-Name=Claude Desktop (AppImage)
 EOF

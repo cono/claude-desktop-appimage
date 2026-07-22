@@ -145,7 +145,7 @@ Terminal=false
 Categories=Network;Utility;
 Comment=Claude Desktop for Linux
 MimeType=x-scheme-handler/claude;
-StartupWMClass=Claude
+StartupWMClass=com.anthropic.Claude
 X-AppImage-Version=$VERSION
 X-AppImage-Name=Claude Desktop
 EOF
