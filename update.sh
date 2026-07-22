@@ -1,75 +1,89 @@
-#!/bin/bash
-
-set -e
+#!/usr/bin/env bash
+#
+# Update the installed Claude Desktop AppImage to the latest GitHub release.
+#
+# Dependency-light: uses curl or wget against the *public* GitHub API (no `gh`,
+# no authentication). This is the single updater used by:
+#   - a manual run (`./update.sh`, or `wget .../update.sh && ./update.sh`)
+#   - `make update`
+#   - the optional systemd user timer installed by `make install`
+#     (installed as /opt/claude/update.sh)
+#
+# Target binary resolution (first match wins):
+#   1. $CLAUDE_BIN, if set
+#   2. /opt/claude/claude-desktop, if /opt/claude exists (the `make install` layout)
+#   3. ./claude-desktop, in the current directory (legacy behaviour)
+#
+set -euo pipefail
 
 REPO="cono/claude-desktop-appimage"
-BINARY_NAME="claude-desktop"
-TEMP_DIR=$(mktemp -d -t claude-update-XXXXXX)
 
-echo "Fetching latest release version from $REPO..."
+# --- Resolve target binary -------------------------------------------------
+if [ -n "${CLAUDE_BIN:-}" ]; then
+    BIN="$CLAUDE_BIN"
+elif [ -d /opt/claude ]; then
+    BIN="/opt/claude/claude-desktop"
+else
+    BIN="./claude-desktop"
+fi
 
-# Get the latest release tag
-LATEST_VERSION=$(gh release view --repo "$REPO" --json tagName --jq '.tagName')
+# --- Detect architecture ---------------------------------------------------
+case "$(uname -m)" in
+    x86_64 | amd64) ARCH="amd64" ;;
+    aarch64 | arm64) ARCH="arm64" ;;
+    *) echo "❌ Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+esac
 
-if [ -z "$LATEST_VERSION" ]; then
-    echo "Error: Could not fetch latest release version"
-    rm -rf "$TEMP_DIR"
+# --- HTTP helpers (curl preferred, wget fallback) --------------------------
+fetch() { # url -> stdout
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL "$1"
+    elif command -v wget >/dev/null 2>&1; then
+        wget -qO- "$1"
+    else
+        echo "❌ Need either curl or wget installed." >&2; exit 1
+    fi
+}
+download() { # url dest
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL "$1" -o "$2"
+    else
+        wget -qO "$2" "$1"
+    fi
+}
+
+# --- Find the latest release asset for this architecture -------------------
+echo "🔎 Checking latest release of $REPO ($ARCH)…"
+API="https://api.github.com/repos/$REPO/releases/latest"
+ASSET_URL=$(fetch "$API" \
+    | grep -oE '"browser_download_url": *"[^"]+"' \
+    | sed -E 's/.*"(https[^"]+)"$/\1/' \
+    | grep -iE "${ARCH}\.AppImage$" \
+    | head -n1)
+
+if [ -z "$ASSET_URL" ]; then
+    echo "❌ Could not find a ${ARCH} AppImage in the latest release of $REPO." >&2
     exit 1
 fi
+echo "   Asset: $ASSET_URL"
 
-echo "Latest version: $LATEST_VERSION"
+# --- Download to a temp file, compare, then swap ---------------------------
+TMP="$(mktemp)"
+trap 'rm -f "$TMP"' EXIT
+echo "⬇️  Downloading…"
+download "$ASSET_URL" "$TMP"
+chmod +x "$TMP"
 
-# Check existing binary hash if it exists
-EXISTING_HASH=""
-if [ -f "$BINARY_NAME" ]; then
-    EXISTING_HASH=$(sha256sum "$BINARY_NAME" | cut -d' ' -f1)
-    echo "Existing binary hash: $EXISTING_HASH"
-fi
-
-# Download only the amd64 AppImage
-echo "Downloading amd64 AppImage..."
-cd "$TEMP_DIR"
-gh release download "$LATEST_VERSION" --repo "$REPO" --pattern "*amd64*.AppImage" --clobber
-
-DOWNLOADED_FILE=$(find . -name "*.AppImage" | head -1)
-
-if [ -z "$DOWNLOADED_FILE" ]; then
-    echo "Error: No amd64 AppImage file found in the release"
-    rm -rf "$TEMP_DIR"
-    exit 1
-fi
-
-echo "Downloaded: $DOWNLOADED_FILE"
-
-# Check hash of downloaded file
-DOWNLOADED_HASH=$(sha256sum "$DOWNLOADED_FILE" | cut -d' ' -f1)
-echo "Downloaded binary hash: $DOWNLOADED_HASH"
-
-cd - > /dev/null
-
-# Compare hashes and skip update if they match
-if [ -n "$EXISTING_HASH" ] && [ "$EXISTING_HASH" = "$DOWNLOADED_HASH" ]; then
-    echo "Binary is already up to date (hashes match)"
-    rm -rf "$TEMP_DIR"
+if [ -f "$BIN" ] && cmp -s "$TMP" "$BIN"; then
+    echo "✓ Already up to date: $BIN"
     exit 0
 fi
 
-echo "Rotating binaries..."
-if [ -f "$BINARY_NAME" ]; then
-    if [ -f "$BINARY_NAME-old" ]; then
-        rm "$BINARY_NAME-old"
-        echo "Removed old backup"
-    fi
-    mv "$BINARY_NAME" "$BINARY_NAME-old"
-    echo "Moved current binary to backup"
+mkdir -p "$(dirname "$BIN")"
+if [ -f "$BIN" ]; then
+    cp -f "$BIN" "$BIN-old"
+    echo "↩️  Backed up previous binary to $BIN-old"
 fi
-
-mv "$TEMP_DIR/$DOWNLOADED_FILE" "$BINARY_NAME"
-chmod +x "$BINARY_NAME"
-
-rm -rf "$TEMP_DIR"
-
-echo "Update completed successfully!"
-echo "Current binary: $BINARY_NAME"
-echo "Previous backup: $BINARY_NAME-old"
-echo "Version: $LATEST_VERSION"
+mv -f "$TMP" "$BIN"
+trap - EXIT
+echo "✅ Updated: $BIN"

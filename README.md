@@ -38,60 +38,108 @@ This project uses GitHub Actions to automatically build Claude Desktop AppImages
 
 ## Automatic Updates
 
-For easier updates, you can use the included `update.sh` script:
+The included `update.sh` script downloads the latest release AppImage and swaps
+it in. It only needs `curl` (or `wget`) — no GitHub CLI or authentication — and
+picks the right architecture (amd64/arm64) automatically.
 
 ```bash
-# Download the update script
+# Download and run the update script
 wget https://raw.githubusercontent.com/cono/claude-desktop-appimage/main/update.sh
 chmod +x update.sh
-
-# Run the update script (requires GitHub CLI)
 ./update.sh
 ```
 
 The script will:
-- Check for the latest release
-- Download the amd64 AppImage automatically  
-- Compare file hashes to avoid unnecessary downloads
-- Back up your current binary as `claude-desktop-old`
+- Check the latest release via the public GitHub API
+- Download the AppImage for your architecture
+- Compare the files to avoid unnecessary swaps
+- Back up the current binary as `<binary>-old`
 - Make the new binary executable
 
-**Requirements:** The script requires the GitHub CLI (`gh`) to be installed.
+**Where it updates:** `$CLAUDE_BIN` if set, otherwise `/opt/claude/claude-desktop`
+if that directory exists (the [`make install`](#recommended-make-install) layout),
+otherwise `./claude-desktop` in the current directory.
+
+**Hands-off updates:** if you installed with `make install`, you were offered a
+**systemd user timer** that runs this script daily. Manage it with:
+
+```bash
+systemctl --user list-timers 'claude-*'   # see the schedule
+systemctl --user start claude-update       # update right now
+systemctl --user disable --now claude-update.timer  # stop auto-updates
+```
 
 ## Local Building (Optional)
 
-If you need to build locally for development purposes:
+If you want to build locally (for development, or to install with full desktop
+integration), clone the repo first:
 
 ```bash
-# Clone this repository
 git clone https://github.com/cono/claude-desktop-appimage.git
 cd claude-desktop-appimage
+```
 
-# Build the AppImage (cleans build files by default)
+### Recommended: `make install`
+
+The easiest way to build **and** integrate on the local machine. It builds the
+AppImage in Docker, then sets everything up so the app behaves like a native
+install — correct menu entry and window/taskbar icon, working `claude://` login
+handler, and (optionally) automatic updates.
+
+```bash
+make install
+```
+
+This will:
+- Build the AppImage in Docker if one isn't already in `./output` (`make build`).
+- Create `/opt/claude` owned by your user (asks for `sudo` once for the `/opt` dir).
+- Install the AppImage as `/opt/claude/claude-desktop` (backing up any previous
+  copy as `claude-desktop-old`).
+- Install the app icon into your icon theme and write
+  `~/.local/share/applications/com.anthropic.Claude.desktop` (its name matches the
+  Wayland `app_id` so your compositor shows the right icon), then register the
+  `claude://` handler.
+- **Prompt** whether to install a **systemd user timer** that auto-updates the
+  AppImage daily (see [Automatic Updates](#automatic-updates)).
+
+Remove everything it installed (config in `~/.config/Claude` is kept):
+
+```bash
+make uninstall
+```
+
+> **Requirements:** Docker (for the build) and a Linux desktop with the usual
+> freedesktop tools. `make install` needs `sudo` only to create `/opt/claude`.
+> Run `make help` to list all targets.
+
+### Manual build
+
+Prefer to drive the build yourself:
+
+```bash
+# Build the AppImage directly on a Debian-based host (installs build deps)
 ./build.sh
 
-# Example: Keep intermediate files
-./build.sh --clean no
+# ...or build in Docker without installing host deps
+make build            # result in ./output
+```
 
-The script will automatically:
- - Check for and install required dependencies
- - Download and extract resources from the Windows version
- - Create an AppImage
- - Perform the build steps
-**AppImage login will not work unless you setup the .desktop file correctly or use a tool like AppImageLauncher to manage it for you.**
+`build.sh` will download and extract resources from the Windows version, replace
+the platform-specific native module, apply the Linux fixes, and produce the
+`.AppImage` (plus a matching `.desktop` file).
 
-1.  **Make the AppImage executable:**
-    ```bash
-    # Replace FILENAME with the actual AppImage filename
-    chmod +x ./FILENAME.AppImage
-    ```
-2.  **Run the AppImage:**
-    ```bash
-    ./FILENAME.AppImage
-    ```
-3.  **(Optional) Integrate with your system:**
-    -   Tools like [AppImageLauncher](https://github.com/TheAssassin/AppImageLauncher) can automatically integrate AppImages (moving them to a central location and adding them to your application menu) using the bundled `.desktop` file.
-    -   Alternatively, you can manually move the `.AppImage` file to a preferred location (e.g., `~/Applications` or `/opt`) and copy the generated `claude-desktop-appimage.desktop` file to `~/.local/share/applications/` (you might need to edit the `Exec=` line in the `.desktop` file to point to the new location of the AppImage).
+**Heads-up:** a bare AppImage installs nothing by itself — running it launches the
+app but adds no menu entry or icon, and `claude://` login **will not work** until a
+`.desktop` file is registered. Use `make install` above, a tool like
+[AppImageLauncher](https://github.com/TheAssassin/AppImageLauncher), or set it up
+manually:
+
+1.  **Make the AppImage executable:** `chmod +x ./FILENAME.AppImage`
+2.  **Run it:** `./FILENAME.AppImage`
+3.  **Integrate manually:** move the `.AppImage` somewhere stable (e.g. `/opt` or
+    `~/Applications`) and copy the generated `claude-desktop-appimage.desktop` to
+    `~/.local/share/applications/`, editing its `Exec=` line to point at the
+    AppImage's location. Then run `update-desktop-database ~/.local/share/applications`.
 
 #### --no-sandbox
 
@@ -109,11 +157,21 @@ I'd love a better suggestion. Feel free to submit a PR or start a discussion if 
 
 # Uninstallation
 
+## Installed with `make install`
 
+From the cloned repository:
+
+```bash
+make uninstall
+```
+
+This removes `/opt/claude`, the desktop entry, the installed icon, and the
+auto-update systemd timer. Your configuration in `~/.config/Claude` is kept
+(see below to remove it too).
 
 ## AppImage (.AppImage)
 
-If you used the AppImage:
+If you set it up manually:
 1.  Delete the `.AppImage` file.
 2.  Delete the associated `.desktop` file (e.g., `claude-desktop-appimage.desktop` from where you placed it, like `~/.local/share/applications/`).
 3.  If you used AppImageLauncher, it might offer an option to un-integrate the AppImage.

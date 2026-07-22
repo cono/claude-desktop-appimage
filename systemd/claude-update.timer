@@ -1,0 +1,13 @@
+[Unit]
+Description=Daily check for Claude Desktop updates
+Documentation=https://github.com/cono/claude-desktop-appimage
+
+[Timer]
+# Run daily; catch up if the machine was off at the scheduled time.
+OnCalendar=daily
+Persistent=true
+# Spread load / avoid a thundering herd on the GitHub API.
+RandomizedDelaySec=1h
+
+[Install]
+WantedBy=timers.target

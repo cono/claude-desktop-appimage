@@ -1,0 +1,11 @@
+[Unit]
+Description=Update Claude Desktop AppImage from the latest GitHub release
+Documentation=https://github.com/cono/claude-desktop-appimage
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Installed copy of update.sh (see `make install`). It resolves the target to
+# /opt/claude/claude-desktop automatically because /opt/claude exists.
+ExecStart=/opt/claude/update.sh

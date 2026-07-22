@@ -8,11 +8,16 @@ This repository creates AppImage packages for Claude Desktop on Linux by repurpo
 
 ## Key Build Commands
 
-- `./build.sh` - Main build script that creates the AppImage
+- `./build.sh` - Main build script that creates the AppImage (Debian-based host)
 - `./build.sh --clean no` - Build without cleaning intermediate files
 - `./build.sh --debug` - Build with debug mode enabled (verbose output)
 - `./build.sh --clean no --debug` - Build with no cleanup and debug mode
-- `./update.sh` - Downloads the latest release from GitHub (requires `gh` CLI)
+- `make build` - Build the AppImage in Docker (no host deps; output in `./output`)
+- `make install` - Build (if needed) and install to `/opt/claude` with desktop integration; prompts to enable a systemd auto-update timer
+- `make uninstall` - Remove `/opt/claude`, the desktop entry, icon, and update timer
+- `make update` - Update the installed AppImage to the latest release now
+- `make help` - List all Make targets
+- `./update.sh` - Downloads the latest release from GitHub (uses `curl`/`wget` + the public API; no `gh`, arch-aware; targets `/opt/claude/claude-desktop` when present, else CWD)
 
 ## Automated Release System
 
@@ -87,10 +92,11 @@ MCP configuration file: `~/.config/Claude/claude_desktop_config.json`
 
 ## Development Notes
 
-- Requires Debian-based Linux distribution for local builds
+- Requires Debian-based Linux distribution for local builds with `./build.sh`; `make build`/`make install` build inside a Docker container (`docker/Dockerfile`, Ubuntu 24.04) so any host with Docker works
 - Build creates both the AppImage and a corresponding .desktop file
 - The `--clean` flag controls whether intermediate build files are preserved
 - The `--debug` flag enables verbose output by removing `2>/dev/null` redirections
-- Update script uses GitHub CLI to fetch latest releases and handles binary rotation
+- `make install` (`scripts/install.sh`) installs to `/opt/claude` with desktop integration and can enable a systemd **user** timer (`systemd/claude-update.{service,timer}`) that runs `update.sh` daily
+- `update.sh` fetches latest releases via the public GitHub API using `curl`/`wget` (no `gh`), is architecture-aware, and handles binary rotation (`<binary>-old`)
 - GitHub Actions automatically handles version detection and release creation
 - Manual workflow dispatch allows forcing builds of existing versions and enabling debug mode

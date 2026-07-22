@@ -2,7 +2,7 @@ IMAGE_NAME := claude-desktop-appimage-builder
 OUTPUT_DIR := $(CURDIR)/output
 
 .DEFAULT_GOAL := help
-.PHONY: build image clean help
+.PHONY: build image clean help install uninstall update
 
 help: ## Show this help message
 	@echo "Usage: make [target]"
@@ -22,3 +22,13 @@ image: ## Build the Docker builder image
 
 clean: ## Remove the output directory
 	rm -rf $(OUTPUT_DIR)
+
+install: ## Install to /opt/claude with desktop integration (builds first if needed)
+	@ls $(OUTPUT_DIR)/claude-desktop-*.AppImage >/dev/null 2>&1 || $(MAKE) build
+	bash scripts/install.sh
+
+uninstall: ## Remove /opt/claude, the desktop entry, icon, and auto-update timer
+	bash scripts/install.sh --uninstall
+
+update: ## Update the installed Claude AppImage to the latest release now
+	bash update.sh
