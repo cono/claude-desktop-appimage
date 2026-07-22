@@ -73,7 +73,8 @@ fi
 # 1) Locate the AppImage to install.
 APPIMAGE="${1:-}"
 if [ -z "$APPIMAGE" ]; then
-    APPIMAGE=$(ls -t "$REPO_ROOT"/output/claude-desktop-*.AppImage 2>/dev/null | head -n1 || true)
+    APPIMAGE=$(find "$REPO_ROOT/output" -maxdepth 1 -name 'claude-desktop-*.AppImage' -printf '%T@ %p\n' 2>/dev/null \
+        | sort -rn | head -n1 | cut -d' ' -f2-)
 fi
 if [ -z "$APPIMAGE" ] || [ ! -f "$APPIMAGE" ]; then
     echo "❌ No AppImage found to install." >&2
@@ -157,8 +158,8 @@ install_timer() {
 }
 
 if command -v systemctl >/dev/null 2>&1 && [ -t 0 ]; then
-    read -r -p "Install a systemd timer to auto-update Claude daily? [y/N] " ans
-    case "${ans:-N}" in
+    read -r -p "Install a systemd timer to auto-update Claude daily? [y/N] " reply
+    case "${reply:-N}" in
         [yY]*) install_timer ;;
         *) echo "↷ Skipped auto-update timer. Update manually anytime with 'make update'." ;;
     esac

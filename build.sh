@@ -465,8 +465,8 @@ TRAY_JS=$(grep -rl '"Tray-Win32\.ico"' app.asar.contents/.vite/build/ 2>/dev/nul
 if [ -n "$TRAY_JS" ]; then
   echo "Found tray icon reference in: $TRAY_JS"
   # Dark variant first so it isn't partially matched by the non-dark rule.
-  sed -i 's/"Tray-Win32-Dark\.ico"/"TrayIconLinux-Dark.png"/g; s/"Tray-Win32\.ico"/"TrayIconLinux.png"/g' $TRAY_JS
-  if ! grep -q '"Tray-Win32\.ico"' $TRAY_JS; then
+  sed -i 's/"Tray-Win32-Dark\.ico"/"TrayIconLinux-Dark.png"/g; s/"Tray-Win32\.ico"/"TrayIconLinux.png"/g' "$TRAY_JS"
+  if ! grep -q '"Tray-Win32\.ico"' "$TRAY_JS"; then
     echo "Successfully redirected Windows ICO tray icons to Linux PNGs"
   else
     echo "Warning: tray icon redirect may have failed" >&2
@@ -480,8 +480,8 @@ if [ -n "$TRAY_JS" ]; then
   #    main window inline. We anchor on the tray-only ',<var>.on("right-click"'
   #    that follows it so sAt() itself is left intact (it is shared with the
   #    Ctrl+Alt+Space Quick Entry shortcut, which must keep working).
-  if grep -qE '\.on\("click",\(\)=>void [A-Za-z0-9_$]+\(\)\),[A-Za-z0-9_$]+\.on\("right-click"' $TRAY_JS; then
-    sed -i -E 's/\.on\("click",\(\)=>void [A-Za-z0-9_$]+\(\)\)(,[A-Za-z0-9_$]+\.on\("right-click")/.on("click",()=>void(exports.mainWindow\&\&!exports.mainWindow.isDestroyed()\&\&(exports.mainWindow.show(),exports.mainWindow.focus())))\1/' $TRAY_JS
+  if grep -qE '\.on\("click",\(\)=>void [A-Za-z0-9_$]+\(\)\),[A-Za-z0-9_$]+\.on\("right-click"' "$TRAY_JS"; then
+    sed -i -E 's/\.on\("click",\(\)=>void [A-Za-z0-9_$]+\(\)\)(,[A-Za-z0-9_$]+\.on\("right-click")/.on("click",()=>void(exports.mainWindow\&\&!exports.mainWindow.isDestroyed()\&\&(exports.mainWindow.show(),exports.mainWindow.focus())))\1/' "$TRAY_JS"
     echo "Rewired tray left-click to restore the main window"
   else
     echo "Warning: tray click handler pattern not found; left-click fix skipped" >&2
@@ -495,8 +495,8 @@ if [ -n "$TRAY_JS" ]; then
   #    false so the real menu (Open/Quit/...) is installed via setContextMenu.
   #    The gate id string is stable across builds; only the accessor name is
   #    minified, so match 'return <ident>("1109029378")'.
-  if grep -qE 'return [A-Za-z0-9_$]+\("1109029378"\)' $TRAY_JS; then
-    sed -i -E 's/return [A-Za-z0-9_$]+\("1109029378"\)/return !1/' $TRAY_JS
+  if grep -qE 'return [A-Za-z0-9_$]+\("1109029378"\)' "$TRAY_JS"; then
+    sed -i -E 's/return [A-Za-z0-9_$]+\("1109029378"\)/return !1/' "$TRAY_JS"
     echo "Forced tray context-menu feature gate off (native menu enabled)"
   else
     echo "Warning: tray context-menu gate pattern not found; menu fix skipped" >&2
