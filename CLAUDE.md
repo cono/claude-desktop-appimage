@@ -13,7 +13,8 @@ This repository creates AppImage packages for Claude Desktop on Linux by repurpo
 - `./build.sh --debug` - Build with debug mode enabled (verbose output)
 - `./build.sh --clean no --debug` - Build with no cleanup and debug mode
 - `make build` - Build the AppImage in Docker (no host deps; output in `./output`)
-- `make install` - Build (if needed) and install to `/opt/claude` with desktop integration; prompts to enable a systemd auto-update timer
+- `make install` - Download the latest GitHub release and install to `/opt/claude` with desktop integration; prompts to enable a systemd auto-update timer
+- `make install-local` - Build locally (if needed) and install that build to `/opt/claude` (development)
 - `make uninstall` - Remove `/opt/claude`, the desktop entry, icon, and update timer
 - `make update` - Update the installed AppImage to the latest release now
 - `make help` - List all Make targets
@@ -96,7 +97,7 @@ MCP configuration file: `~/.config/Claude/claude_desktop_config.json`
 - Build creates both the AppImage and a corresponding .desktop file
 - The `--clean` flag controls whether intermediate build files are preserved
 - The `--debug` flag enables verbose output by removing `2>/dev/null` redirections
-- `make install` (`scripts/install.sh`) installs to `/opt/claude` with desktop integration and can enable a systemd **user** timer (`systemd/claude-update.{service,timer}`) that runs `update.sh` daily
+- `make install` (`scripts/install.sh`) downloads the latest release (via `update.sh`) and installs to `/opt/claude` with desktop integration; `make install-local` / `install.sh --local` installs a locally-built AppImage from `./output` instead. It can enable a systemd **user** timer (`systemd/claude-update.{service,timer}`) that runs `update.sh` daily
 - `update.sh` fetches latest releases via the public GitHub API using `curl`/`wget` (no `gh`), is architecture-aware, and handles binary rotation (`<binary>-old`)
 - GitHub Actions automatically handles version detection and release creation
 - Manual workflow dispatch allows forcing builds of existing versions and enabling debug mode

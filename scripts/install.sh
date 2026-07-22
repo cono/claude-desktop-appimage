@@ -1,13 +1,19 @@
 #!/usr/bin/env bash
 #
-# Install a locally-built Claude Desktop AppImage into /opt/claude and wire up
-# desktop integration on the host, so the app gets a proper menu entry, the
-# correct window/taskbar icon, and the claude:// URL handler — on ANY setup,
-# without depending on AppImageLauncher/appimaged.
+# Install Claude Desktop into /opt/claude and wire up desktop integration on
+# the host, so the app gets a proper menu entry, the correct window/taskbar
+# icon, and the claude:// URL handler — on ANY setup, without depending on
+# AppImageLauncher/appimaged.
+#
+# By default it DOWNLOADS the latest AppImage from GitHub releases (no local
+# build, no Docker needed). Use --local to install a locally-built AppImage
+# instead (for development).
 #
 # What it does:
 #   - creates /opt/claude (owned by the invoking user; needs sudo once)
-#   - installs the AppImage as /opt/claude/claude-desktop (rotating a backup)
+#   - installs the AppImage as /opt/claude/claude-desktop
+#       * download mode: via update.sh (latest release, rotates a backup)
+#       * --local mode:  copies a local build (rotating a backup)
 #   - installs the app icon into the hicolor theme
 #   - writes ~/.local/share/applications/com.anthropic.Claude.desktop
 #     (filename == the Wayland app_id Electron uses, so GNOME matches the window)
@@ -15,8 +21,10 @@
 #   - optionally installs a systemd user timer for daily auto-updates
 #
 # Usage:
-#   scripts/install.sh [PATH_TO_APPIMAGE]     # install (auto-detects output/ if omitted)
-#   scripts/install.sh --uninstall            # remove everything this installs
+#   scripts/install.sh                 # download the latest GitHub release and install
+#   scripts/install.sh --local         # install the newest AppImage in ./output
+#   scripts/install.sh --local PATH    # install a specific local AppImage
+#   scripts/install.sh --uninstall     # remove everything this installs
 #
 set -euo pipefail
 
@@ -70,21 +78,17 @@ fi
 # ---------------------------------------------------------------------------
 # Install
 # ---------------------------------------------------------------------------
-# 1) Locate the AppImage to install.
-APPIMAGE="${1:-}"
-if [ -z "$APPIMAGE" ]; then
-    APPIMAGE=$(find "$REPO_ROOT/output" -maxdepth 1 -name 'claude-desktop-*.AppImage' -printf '%T@ %p\n' 2>/dev/null \
-        | sort -rn | head -n1 | cut -d' ' -f2-)
-fi
-if [ -z "$APPIMAGE" ] || [ ! -f "$APPIMAGE" ]; then
-    echo "❌ No AppImage found to install." >&2
-    echo "   Build one first with 'make build', or pass a path:" >&2
-    echo "     scripts/install.sh /path/to/claude-desktop-<ver>-<arch>.AppImage" >&2
-    exit 1
-fi
-echo "📦 Installing: $APPIMAGE"
+# 0) Parse mode: download the latest release (default) or install a local build.
+MODE="download"
+LOCAL_PATH=""
+case "${1:-}" in
+    "")      MODE="download" ;;
+    --local) MODE="local"; LOCAL_PATH="${2:-}" ;;
+    -*)      echo "❌ Unknown option: $1" >&2; exit 1 ;;
+    *)       MODE="local"; LOCAL_PATH="$1" ;;
+esac
 
-# 2) Create /opt/claude owned by the current user (needs sudo for /opt).
+# 1) Create /opt/claude owned by the current user (needs sudo for /opt).
 if [ ! -d "$INSTALL_DIR" ]; then
     echo "🔐 Creating $INSTALL_DIR (sudo required)…"
     sudo mkdir -p "$INSTALL_DIR"
@@ -94,16 +98,34 @@ elif [ ! -w "$INSTALL_DIR" ]; then
     sudo chown "$USER:$(id -gn)" "$INSTALL_DIR"
 fi
 
-# 3) Install the binary (rotate a backup).
-if [ -f "$BIN" ]; then
-    cp -f "$BIN" "$BIN-old"
-    echo "↩️  Backed up previous binary to $BIN-old"
+# 2) Put the binary in place.
+if [ "$MODE" = "download" ]; then
+    echo "⬇️  Downloading the latest Claude Desktop release from GitHub…"
+    # update.sh downloads the right-arch AppImage into $CLAUDE_BIN and rotates
+    # a "<binary>-old" backup. It exits 0 (no-op) if already up to date.
+    CLAUDE_BIN="$BIN" bash "$REPO_ROOT/update.sh"
+else
+    if [ -z "$LOCAL_PATH" ]; then
+        LOCAL_PATH=$(find "$REPO_ROOT/output" -maxdepth 1 -name 'claude-desktop-*.AppImage' -printf '%T@ %p\n' 2>/dev/null \
+            | sort -rn | head -n1 | cut -d' ' -f2-)
+    fi
+    if [ -z "$LOCAL_PATH" ] || [ ! -f "$LOCAL_PATH" ]; then
+        echo "❌ No local AppImage found to install." >&2
+        echo "   Build one first with 'make build', or pass a path:" >&2
+        echo "     scripts/install.sh --local /path/to/claude-desktop-<ver>-<arch>.AppImage" >&2
+        exit 1
+    fi
+    echo "📦 Installing local build: $LOCAL_PATH"
+    if [ -f "$BIN" ]; then
+        cp -f "$BIN" "$BIN-old"
+        echo "↩️  Backed up previous binary to $BIN-old"
+    fi
+    cp -f "$LOCAL_PATH" "$BIN"
+    chmod +x "$BIN"
 fi
-cp -f "$APPIMAGE" "$BIN"
-chmod +x "$BIN"
-echo "✓ Installed binary at $BIN"
+echo "✓ Binary installed at $BIN"
 
-# 4) Install the icon (extract the AppImage's .DirIcon, a 256x256 PNG).
+# 3) Install the icon (extract the AppImage's .DirIcon, a 256x256 PNG).
 echo "🎨 Installing icon…"
 mkdir -p "$ICON_DIR"
 TMPX="$(mktemp -d)"
@@ -119,7 +141,7 @@ else
 fi
 rm -rf "$TMPX"
 
-# 5) Desktop entry. The filename equals the Wayland app_id so GNOME matches the
+# 4) Desktop entry. The filename equals the Wayland app_id so GNOME matches the
 #    window to it (StartupWMClass covers X11 / older matchers too).
 echo "📝 Writing desktop entry…"
 mkdir -p "$APPS_DIR"
@@ -137,12 +159,12 @@ StartupWMClass=$APP_ID
 EOF
 echo "✓ Desktop entry at $DESKTOP_FILE"
 
-# 6) Refresh caches and register the claude:// handler.
+# 5) Refresh caches and register the claude:// handler.
 refresh_caches
 xdg-mime default "$APP_ID.desktop" x-scheme-handler/claude >/dev/null 2>&1 || true
 echo "✓ Caches refreshed and claude:// handler registered"
 
-# 7) Optional: systemd user timer for daily auto-updates.
+# 6) Optional: systemd user timer for daily auto-updates.
 install_timer() {
     cp -f "$REPO_ROOT/update.sh" "$UPDATER"
     chmod +x "$UPDATER"
@@ -154,6 +176,8 @@ install_timer() {
     echo "✓ Auto-update timer enabled (daily)."
     echo "   Status:  systemctl --user list-timers 'claude-*'"
     echo "   Run now: systemctl --user start $SERVICE"
+    echo "   Logs:    journalctl --user -u $SERVICE            # add -f to follow, -e to jump to newest"
+    echo "   History: journalctl --user -u $SERVICE | grep -E 'Updated to|up to date'   # which version landed when"
     echo "   Disable: systemctl --user disable --now $TIMER"
 }
 

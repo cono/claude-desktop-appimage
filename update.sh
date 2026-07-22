@@ -65,6 +65,9 @@ if [ -z "$ASSET_URL" ]; then
     echo "❌ Could not find a ${ARCH} AppImage in the latest release of $REPO." >&2
     exit 1
 fi
+# Derive the version from the asset filename (claude-desktop-<version>-<arch>.AppImage)
+VERSION=$(basename "$ASSET_URL" | sed -E 's/^claude-desktop-(.+)-(amd64|arm64)\.AppImage$/\1/')
+echo "   Latest release: ${VERSION:-unknown} ($ARCH)"
 echo "   Asset: $ASSET_URL"
 
 # --- Download to a temp file, compare, then swap ---------------------------
@@ -75,7 +78,7 @@ download "$ASSET_URL" "$TMP"
 chmod +x "$TMP"
 
 if [ -f "$BIN" ] && cmp -s "$TMP" "$BIN"; then
-    echo "✓ Already up to date: $BIN"
+    echo "✓ Already up to date (${VERSION:-unknown}): $BIN"
     exit 0
 fi
 
@@ -86,4 +89,4 @@ if [ -f "$BIN" ]; then
 fi
 mv -f "$TMP" "$BIN"
 trap - EXIT
-echo "✅ Updated: $BIN"
+echo "✅ Updated to ${VERSION:-unknown}: $BIN"

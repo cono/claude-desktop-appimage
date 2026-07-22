@@ -81,20 +81,20 @@ cd claude-desktop-appimage
 
 ### Recommended: `make install`
 
-The easiest way to build **and** integrate on the local machine. It builds the
-AppImage in Docker, then sets everything up so the app behaves like a native
-install — correct menu entry and window/taskbar icon, working `claude://` login
-handler, and (optionally) automatic updates.
+The easiest way to get a fully integrated install. It **downloads the latest
+AppImage from GitHub releases** (no build, no Docker) and sets everything up so
+the app behaves like a native install — correct menu entry and window/taskbar
+icon, working `claude://` login handler, and (optionally) automatic updates.
 
 ```bash
 make install
 ```
 
 This will:
-- Build the AppImage in Docker if one isn't already in `./output` (`make build`).
+- Download the latest release AppImage for your architecture (via `update.sh`).
 - Create `/opt/claude` owned by your user (asks for `sudo` once for the `/opt` dir).
-- Install the AppImage as `/opt/claude/claude-desktop` (backing up any previous
-  copy as `claude-desktop-old`).
+- Install it as `/opt/claude/claude-desktop` (backing up any previous copy as
+  `claude-desktop-old`).
 - Install the app icon into your icon theme and write
   `~/.local/share/applications/com.anthropic.Claude.desktop` (its name matches the
   Wayland `app_id` so your compositor shows the right icon), then register the
@@ -102,15 +102,23 @@ This will:
 - **Prompt** whether to install a **systemd user timer** that auto-updates the
   AppImage daily (see [Automatic Updates](#automatic-updates)).
 
+To install a **locally-built** AppImage instead of the released one (for
+development), build it and use `install-local`:
+
+```bash
+make install-local          # runs `make build` if ./output is empty, then installs it
+```
+
 Remove everything it installed (config in `~/.config/Claude` is kept):
 
 ```bash
 make uninstall
 ```
 
-> **Requirements:** Docker (for the build) and a Linux desktop with the usual
-> freedesktop tools. `make install` needs `sudo` only to create `/opt/claude`.
-> Run `make help` to list all targets.
+> **Requirements:** `curl` or `wget` and a Linux desktop with the usual
+> freedesktop tools; `make install` needs `sudo` only to create `/opt/claude`.
+> (`make install-local` additionally needs Docker for the build.) Run `make help`
+> to list all targets.
 
 ### Manual build
 
