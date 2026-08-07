@@ -408,102 +408,195 @@ cp "$CLAUDE_EXTRACT_DIR/lib/net45/resources/Tray"* app.asar.contents/resources/
 cp "$CLAUDE_EXTRACT_DIR/lib/net45/resources/"*-*.json app.asar.contents/resources/i18n/
 
 echo "##############################################################"
-echo "Removing "'!'" from 'if ("'!'"isWindows && isMainWindow) return null;'"
-echo "detection flag to to enable title bar"
+echo "Patching the minified app bundle for Linux"
+echo ""
+echo "Claude Desktop ships minified JavaScript built for Windows. Between"
+echo "upstream releases the local identifiers, the chunk file names, which"
+echo "chunk a given function lands in, and even the quote character used for"
+echo "string literals all change. Every patch below therefore anchors only on"
+echo "things that survive minification -- icon file names, Statsig gate ids,"
+echo "Electron API names -- locates its file by content rather than by name,"
+echo "and captures minified identifiers with regex groups instead of"
+echo "hardcoding them."
+echo ""
+echo "Every patch asserts that it actually changed something. A patch that"
+echo "quietly matched nothing used to still report success and ship a subtly"
+echo "broken AppImage, so an unmatched anchor is now a hard build failure."
 
-echo "Current working directory: '$PWD'"
+VITE_BUILD_DIR="app.asar.contents/.vite/build"
 
-SEARCH_BASE="app.asar.contents/.vite/renderer/main_window/assets"
-TARGET_PATTERN="MainWindowPage-*.js"
+# Quote characters the minifier is known to emit for string literals: releases
+# up to 1.24012.11 used double quotes, 1.25927.0 switched to backtick template
+# literals. Match every literal through this class so either style works.
+JS_QUOTE='["`]'
 
-echo "Searching for '$TARGET_PATTERN' within '$SEARCH_BASE'..."
-# Find the target file recursively (ensure only one matches)
-TARGET_FILES=$(find "$SEARCH_BASE" -type f -name "$TARGET_PATTERN")
-# Count non-empty lines to get the number of files found
-NUM_FILES=$(echo "$TARGET_FILES" | grep -c .)
-
-if [ "$NUM_FILES" -eq 0 ]; then
-  echo "Error: No file matching '$TARGET_PATTERN' found within '$SEARCH_BASE'." >&2
+patch_fail() {
+  echo "" >&2
+  echo "❌ Bundle patch anchor did not match: $1" >&2
+  echo "" >&2
+  echo "   Claude Desktop $VERSION has most likely restructured its bundle." >&2
+  echo "   Inspect $APP_STAGING_DIR/app.asar.contents and update the patterns" >&2
+  echo "   in build.sh. Do not loosen these checks to get a green build: a" >&2
+  echo "   patch that silently does nothing ships a broken tray or window." >&2
   exit 1
-elif [ "$NUM_FILES" -gt 1 ]; then
-  echo "Error: Expected exactly one file matching '$TARGET_PATTERN' within '$SEARCH_BASE', but found $NUM_FILES." >&2
-  echo "Found files:" >&2
-  echo "$TARGET_FILES" >&2
-  exit 1
-else
-  # Exactly one file found
-  TARGET_FILE="$TARGET_FILES" # Assign the found file path
-  echo "Found target file: $TARGET_FILE"
-  echo "Attempting to replace patterns like 'if(!VAR1 && VAR2)' with 'if(VAR1 && VAR2)' in $TARGET_FILE..."
-  # Use character classes [a-zA-Z]+ to match minified variable names
-  # Capture group 1: first variable name
-  # Capture group 2: second variable name
-  sed -i -E 's/if\(!([a-zA-Z]+)[[:space:]]*&&[[:space:]]*([a-zA-Z]+)\)/if(\1 \&\& \2)/g' "$TARGET_FILE"
+}
 
-  # Verification: Check if the original pattern structure still exists
-  if ! grep -q -E 'if\(![a-zA-Z]+[[:space:]]*&&[[:space:]]*[a-zA-Z]+\)' "$TARGET_FILE"; then
-    echo "Successfully replaced patterns like 'if(!VAR1 && VAR2)' with 'if(VAR1 && VAR2)' in $TARGET_FILE"
+# Count how many times an ERE matches inside a file. grep exits 1 when nothing
+# matches, and zero is a meaningful answer for the callers below (they assert
+# the count both before and after patching), so it is reported as 0 rather
+# than treated as an error.
+count_matches() {
+  local file="$1" regex="$2" output
+  if output=$(grep -oE -- "$regex" "$file"); then
+    printf '%s' "$output" | grep -c .
   else
-    echo "Error: Failed to replace patterns like 'if(!VAR1 && VAR2)' in $TARGET_FILE. Check file contents." >&2
-    exit 1
+    printf '0'
   fi
+}
+
+# Same, for a literal (non-regex) string.
+count_literal() {
+  local file="$1" literal="$2" output
+  if output=$(grep -oF -- "$literal" "$file"); then
+    printf '%s' "$output" | grep -c .
+  else
+    printf '0'
+  fi
+}
+
+# Locate the one file under .vite/build/ whose contents match an ERE and report
+# it in FOUND_FILE. Files are always found by content because code migrates
+# between chunks: the tray code lived in index.chunk-*.js up to 1.24012.11 and
+# moved into index.js in 1.25927.0, and the context-menu gate now sits in a
+# different chunk from the tray code that consumes it.
+FOUND_FILE=""
+locate_single_file() {
+  local description="$1" regex="$2" file
+  local -a matches=()
+  for file in "$VITE_BUILD_DIR"/*.js; do
+    if grep -qE -- "$regex" "$file"; then
+      matches+=("$file")
+    fi
+  done
+  if [ "${#matches[@]}" -ne 1 ]; then
+    patch_fail "$description (expected exactly 1 matching file, found ${#matches[@]})"
+  fi
+  FOUND_FILE="${matches[0]}"
+  echo "  file: $(basename "$FOUND_FILE")"
+}
+
+echo ""
+echo "--- Check: upstream still draws its own window controls ---"
+# Older builds needed an 'if (!isWindows && isMainWindow) return null;' patch
+# in the renderer to get a title bar on Linux. That code is gone -- the app UI
+# moved out of app.asar into a separate ion-dist bundle, and the main window is
+# now created with titleBarStyle 'hidden' plus a titleBarOverlay, so Electron
+# draws usable window controls on Linux without any patching. That patch had in
+# fact silently matched nothing since at least 1.24012.11 while still reporting
+# success, so it is gone; this asserts the upstream behaviour that replaced it,
+# so a release that returns to a Windows-only title bar fails the build instead
+# of producing a window that cannot be closed.
+locate_single_file "main window titleBarStyle/titleBarOverlay options" \
+  "titleBarStyle:${JS_QUOTE}hidden${JS_QUOTE},titleBarOverlay:"
+echo "  ✓ main window still uses a hidden title bar with window controls overlay"
+
+echo ""
+echo "--- Fix 1/3: tray icon file names ---"
+# Electron's nativeImage cannot decode the Windows .ico tray images (they load
+# as an empty 0x0 image), so the tray registers with no icon and the system
+# tray shows a placeholder. The selector switches on a build-time constant that
+# stays "ico" on this Windows build, so redirect the file names to the Linux
+# PNGs that ship alongside them (TrayIconLinux*.png), which decode fine.
+# Only the file names are matched, so the minifier's quote style is irrelevant.
+TRAY_ICON_RE="${JS_QUOTE}Tray-Win32(-Dark)?\.ico${JS_QUOTE}"
+locate_single_file "tray icon selector" "$TRAY_ICON_RE"
+TRAY_ICON_JS="$FOUND_FILE"
+
+ICON_COUNT=$(count_matches "$TRAY_ICON_JS" "$TRAY_ICON_RE")
+if [ "$ICON_COUNT" -ne 2 ]; then
+  patch_fail "tray icon selector (expected 2 .ico literals, found $ICON_COUNT)"
 fi
-echo "##############################################################"
-
-echo "##############################################################"
-echo "Fixing tray icon for Linux: Electron's nativeImage cannot decode"
-echo "the Windows .ico tray images (they load as an empty 0x0 image), so"
-echo "the tray registers with no icon and the system tray shows a"
-echo "placeholder. On Linux the selector falls through to the Windows"
-echo '"ico" case (r2t stays "ico"), so redirect Tray-Win32*.ico to the'
-echo "bundled Linux PNGs (TrayIconLinux*.png), which decode fine."
-
-# The tray-icon selector lives in a hashed chunk under .vite/build/
-# (e.g. index.chunk-*.js), NOT index.js. Locate it by content: the
-# literal icon filenames are not minified, only the chunk name is.
-TRAY_JS=$(grep -rl '"Tray-Win32\.ico"' app.asar.contents/.vite/build/ 2>/dev/null)
-if [ -n "$TRAY_JS" ]; then
-  echo "Found tray icon reference in: $TRAY_JS"
-  # Dark variant first so it isn't partially matched by the non-dark rule.
-  sed -i 's/"Tray-Win32-Dark\.ico"/"TrayIconLinux-Dark.png"/g; s/"Tray-Win32\.ico"/"TrayIconLinux.png"/g' "$TRAY_JS"
-  if ! grep -q '"Tray-Win32\.ico"' "$TRAY_JS"; then
-    echo "Successfully redirected Windows ICO tray icons to Linux PNGs"
-  else
-    echo "Warning: tray icon redirect may have failed" >&2
-  fi
-
-  # --- Tray behaviour fixes (same chunk as the tray icon) ---
-  # 1) Left-click restores the MAIN window. Upstream wires the tray click to
-  #    sAt(), which opens the Quick Entry popup and only falls back to the main
-  #    window if the popup fails to show -> on Linux clicking the tray never
-  #    brings the window back. Rewire ONLY the tray click handler to show the
-  #    main window inline. We anchor on the tray-only ',<var>.on("right-click"'
-  #    that follows it so sAt() itself is left intact (it is shared with the
-  #    Ctrl+Alt+Space Quick Entry shortcut, which must keep working).
-  if grep -qE '\.on\("click",\(\)=>void [A-Za-z0-9_$]+\(\)\),[A-Za-z0-9_$]+\.on\("right-click"' "$TRAY_JS"; then
-    sed -i -E 's/\.on\("click",\(\)=>void [A-Za-z0-9_$]+\(\)\)(,[A-Za-z0-9_$]+\.on\("right-click")/.on("click",()=>void(exports.mainWindow\&\&!exports.mainWindow.isDestroyed()\&\&(exports.mainWindow.show(),exports.mainWindow.focus())))\1/' "$TRAY_JS"
-    echo "Rewired tray left-click to restore the main window"
-  else
-    echo "Warning: tray click handler pattern not found; left-click fix skipped" >&2
-  fi
-
-  # 2) Populate the tray context menu. Upstream gates the native context menu
-  #    behind a Statsig feature flag (gate id 1109029378); when the gate is on
-  #    it calls Tray.setContextMenu(null) and relies on a manual popUpContextMenu
-  #    on right-click, which does not work with StatusNotifierItem hosts on
-  #    Wayland -> the tray menu is empty. Force that gate's accessor to return
-  #    false so the real menu (Open/Quit/...) is installed via setContextMenu.
-  #    The gate id string is stable across builds; only the accessor name is
-  #    minified, so match 'return <ident>("1109029378")'.
-  if grep -qE 'return [A-Za-z0-9_$]+\("1109029378"\)' "$TRAY_JS"; then
-    sed -i -E 's/return [A-Za-z0-9_$]+\("1109029378"\)/return !1/' "$TRAY_JS"
-    echo "Forced tray context-menu feature gate off (native menu enabled)"
-  else
-    echo "Warning: tray context-menu gate pattern not found; menu fix skipped" >&2
-  fi
-else
-  echo "Warning: Could not find Tray-Win32.ico reference under .vite/build/" >&2
+# Dark variant first so it isn't partially matched by the non-dark rule.
+sed -i -E "s/(${JS_QUOTE})Tray-Win32-Dark\.ico(${JS_QUOTE})/\1TrayIconLinux-Dark.png\2/g; s/(${JS_QUOTE})Tray-Win32\.ico(${JS_QUOTE})/\1TrayIconLinux.png\2/g" "$TRAY_ICON_JS"
+ICON_COUNT=$(count_matches "$TRAY_ICON_JS" "$TRAY_ICON_RE")
+if [ "$ICON_COUNT" -ne 0 ]; then
+  patch_fail "tray icon selector still has $ICON_COUNT .ico literals after patching"
 fi
+echo "  ✓ redirected Tray-Win32*.ico to TrayIconLinux*.png"
+
+echo ""
+echo "--- Fix 2/3: tray left-click restores the main window ---"
+# Upstream wires the tray click to the Quick Entry popup, falling back to the
+# main window only if the popup fails to show, so on Linux clicking the tray
+# never brings the window back. Rewire ONLY the tray click handler. The
+# adjacent tray-only '<var>.on("right-click"' is part of the anchor so the
+# shared Quick Entry function is left intact (Ctrl+Alt+Space must keep working).
+TRAY_CLICK_RE="([A-Za-z0-9_\$]+)\.on\(${JS_QUOTE}click${JS_QUOTE},\(\)=>void ([A-Za-z0-9_\$]+)\(\)\),\1\.on\(${JS_QUOTE}right-click${JS_QUOTE}"
+locate_single_file "tray left-click handler" "$TRAY_CLICK_RE"
+TRAY_CLICK_JS="$FOUND_FILE"
+
+CLICK_COUNT=$(count_matches "$TRAY_CLICK_JS" "$TRAY_CLICK_RE")
+if [ "$CLICK_COUNT" -ne 1 ]; then
+  patch_fail "tray left-click handler (expected 1 registration, found $CLICK_COUNT)"
+fi
+
+# Derive the main-window reference from the click target's own fallback
+# (<mw>&&!<mw>.isDestroyed()&&(<mw>.show(),<mw>.focus())) rather than
+# hardcoding it: it was 'exports.mainWindow' up to 1.24012.11 and is a minified
+# module reference such as 'u.f' from 1.25927.0 on.
+TRAY_MW_RE='([A-Za-z0-9_$]+\.[A-Za-z0-9_$]+)\.isDestroyed\(\)&&\(\1\.show\(\),\1\.focus\(\)\)'
+TRAY_MAIN_WINDOW=""
+if TRAY_MW_MATCH=$(grep -oE -- "$TRAY_MW_RE" "$TRAY_CLICK_JS"); then
+  TRAY_MAIN_WINDOW=$(printf '%s' "$TRAY_MW_MATCH" | head -1 | sed -E 's/\.isDestroyed.*//')
+fi
+if [ -z "$TRAY_MAIN_WINDOW" ]; then
+  patch_fail "main window show/focus expression (needed to rewire the tray click)"
+fi
+echo "  main window reference: $TRAY_MAIN_WINDOW"
+
+TRAY_CLICK_NEW="()=>void(${TRAY_MAIN_WINDOW}&&!${TRAY_MAIN_WINDOW}.isDestroyed()&&(${TRAY_MAIN_WINDOW}.show(),${TRAY_MAIN_WINDOW}.focus()))"
+# '&' is the whole-match reference in a sed replacement, so escape it.
+sed -i -E "s/(${JS_QUOTE})click\1,\(\)=>void [A-Za-z0-9_\$]+\(\)(\),[A-Za-z0-9_\$]+\.on\(\1right-click\1)/\1click\1,${TRAY_CLICK_NEW//&/\\&}\2/" "$TRAY_CLICK_JS"
+
+CLICK_COUNT=$(count_matches "$TRAY_CLICK_JS" "$TRAY_CLICK_RE")
+if [ "$CLICK_COUNT" -ne 0 ]; then
+  patch_fail "tray left-click handler was not rewritten"
+fi
+CLICK_COUNT=$(count_literal "$TRAY_CLICK_JS" "$TRAY_CLICK_NEW")
+if [ "$CLICK_COUNT" -ne 1 ]; then
+  patch_fail "expected exactly 1 rewritten tray click handler, found $CLICK_COUNT"
+fi
+echo "  ✓ tray left-click now shows $TRAY_MAIN_WINDOW directly"
+
+echo ""
+echo "--- Fix 3/3: tray context menu ---"
+# Upstream gates the native context menu behind a Statsig feature flag (gate id
+# 1109029378); when the gate is on it calls Tray.setContextMenu(null) and relies
+# on a manual popUpContextMenu on right-click, which does not work with
+# StatusNotifierItem hosts on Wayland -> the tray menu is empty. Force that
+# gate's accessor to return false so the real menu (Open/Quit/...) is installed
+# via setContextMenu. The gate id is a stable source string; the accessor name
+# and its callee are minified, and the accessor may live in a different chunk
+# from the tray code that calls it, so it is located independently.
+# Matching 'return <callee>(<id>)' deliberately excludes the plain
+# gate-change listener registration that uses the same id.
+TRAY_GATE_RE="return [A-Za-z0-9_\$]+(\.[A-Za-z0-9_\$]+)*\(${JS_QUOTE}1109029378${JS_QUOTE}\)"
+locate_single_file "tray context-menu feature gate accessor" "$TRAY_GATE_RE"
+TRAY_GATE_JS="$FOUND_FILE"
+
+GATE_COUNT=$(count_matches "$TRAY_GATE_JS" "$TRAY_GATE_RE")
+if [ "$GATE_COUNT" -ne 1 ]; then
+  patch_fail "tray context-menu gate accessor (expected 1, found $GATE_COUNT)"
+fi
+sed -i -E "s/${TRAY_GATE_RE}/return !1/" "$TRAY_GATE_JS"
+GATE_COUNT=$(count_matches "$TRAY_GATE_JS" "$TRAY_GATE_RE")
+if [ "$GATE_COUNT" -ne 0 ]; then
+  patch_fail "tray context-menu gate accessor was not patched"
+fi
+echo "  ✓ forced tray context-menu gate off (native menu enabled)"
+
+echo ""
+echo "✓ All bundle patches applied and verified"
 echo "##############################################################"
 
 "$ASAR_EXEC" pack app.asar.contents app.asar
