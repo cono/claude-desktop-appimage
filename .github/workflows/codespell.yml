@@ -8,11 +8,10 @@ run-name: |
     format('{0} triggered by @{1}', github.event_name, github.actor)
   }}
 
+# Repository is deprecated: push/PR triggers are disabled, so this workflow
+# only runs when triggered by hand.
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
